@@ -8,7 +8,7 @@
     <Grid>
 
         <!-- glass card -->
-        <Border x:Name="Pill" VerticalAlignment="Bottom" Margin="28" Width="560" CornerRadius="28" Padding="26,20,22,18"
+        <Border x:Name="Pill" VerticalAlignment="Bottom" Margin="28" ClipToBounds="True" RenderTransformOrigin="0.5,1" Width="560" CornerRadius="28" Padding="26,20,22,18"
                 BorderThickness="1" TextElement.FontFamily="Segoe UI Variable Display, Segoe UI">
             <Border.Background>
                 <LinearGradientBrush StartPoint="0,0" EndPoint="1,0.35">
@@ -23,11 +23,12 @@
                     <GradientStop Color="#26FFFFFF" Offset="1" />
                 </LinearGradientBrush>
             </Border.BorderBrush>
+            <Border.RenderTransform><TranslateTransform x:Name="Lift" /></Border.RenderTransform>
             <Border.Effect>
                 <DropShadowEffect BlurRadius="36" ShadowDepth="10" Direction="270" Opacity="0.45" Color="Black" />
             </Border.Effect>
 
-            <StackPanel>
+            <StackPanel x:Name="CardContent" Width="510" HorizontalAlignment="Center">
                 <!-- transcript: highest priority, grows up to 3 lines, newest line stays at the bottom -->
                 <Canvas x:Name="PreviewBox" Width="510" Height="0" ClipToBounds="True" Margin="0,0,0,16" Visibility="Collapsed">
                     <TextBlock x:Name="Preview" Width="510" Foreground="#F5FFFFFF" FontSize="18" LineHeight="26"

@@ -84,6 +84,10 @@ public partial class OverlayWindow : Window
     private double _scale = 1;
     private int _lastX = int.MinValue, _lastY, _lastW, _lastH;
 
+    // intro animation: small dot rises from the bottom edge, then grows into the card
+    private const double IntroSeconds = 0.65, DotSize = 26, RiseDip = 70;
+    private double _introStart = -1, _naturalCardHeight = 120;
+
     // transcript animation state
     private string _fullText = "";
     private int _shownLen;
@@ -128,10 +132,14 @@ public partial class OverlayWindow : Window
         StatusText.Text = AppSettings.Current.TapToToggle ? "Listening · release to stop" : "Listening";
         Array.Clear(_levels);
 
-        // base height of the card without transcript (measured once per show)
+        // base height of the card without transcript (measured once per show, before the intro shrinks it)
         PreviewBox.Visibility = Visibility.Collapsed;
+        Pill.Width = 560; Pill.Height = double.NaN; Pill.CornerRadius = new CornerRadius(28);
         Pill.Measure(new Size(WindowWidthDip, double.PositiveInfinity));
         _restDip = Pill.DesiredSize.Height;
+        _naturalCardHeight = _restDip - 2 * ShadowMarginDip;
+        _introStart = _clock.Elapsed.TotalSeconds;
+        ApplyIntro(0);
 
         // pick the monitor once; the card stays put for the whole recording
         var mon = TargetMonitor();
@@ -148,7 +156,7 @@ public partial class OverlayWindow : Window
         Opacity = 0;
         if (!IsVisible) Show();
         ApplyWindowRect(force: true);
-        BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(160)) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } });
+        BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(120)) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } });
 
         _anim.Start();
         _poll.Start();
@@ -251,7 +259,35 @@ public partial class OverlayWindow : Window
             PreviewBox.OpacityMask = _curTop < -0.5 ? FadeMask : null;
         }
 
+        if (_introStart >= 0) ApplyIntro((now - _introStart) / IntroSeconds);
+
         ApplyWindowRect(force: false);
+    }
+
+    private static double EaseOut(double t) => 1 - Math.Pow(1 - t, 3);
+    private static double EaseInOut(double t) => t < 0.5 ? 4 * t * t * t : 1 - Math.Pow(-2 * t + 2, 3) / 2;
+
+    /// <summary>p = 0..1: first the dot rises from the bottom edge, overlapping with it growing into the full card.</summary>
+    private void ApplyIntro(double p)
+    {
+        if (p >= 1)
+        {
+            _introStart = -1;
+            Pill.Width = 560; Pill.Height = double.NaN; Pill.CornerRadius = new CornerRadius(28);
+            CardContent.Opacity = 1; Lift.Y = 0;
+            return;
+        }
+        p = Math.Max(0, p);
+        double rise = EaseOut(Math.Min(1, p / 0.5));
+        double grow = EaseInOut(Math.Clamp((p - 0.3) / 0.7, 0, 1));
+        double w = DotSize + (560 - DotSize) * grow;
+        double natural = _naturalCardHeight + (PreviewBox.Visibility == Visibility.Visible ? PreviewBox.Height + PreviewGap : 0);
+        double h = DotSize + (natural - DotSize) * grow;
+        Pill.Width = w;
+        Pill.Height = h;
+        Pill.CornerRadius = new CornerRadius(Math.Min(28, h / 2));
+        Lift.Y = (1 - rise) * RiseDip;
+        CardContent.Opacity = Math.Clamp((grow - 0.55) / 0.45, 0, 1);
     }
 
     /// <summary>One SetWindowPos for size and position, bottom-anchored in physical pixels.</summary>

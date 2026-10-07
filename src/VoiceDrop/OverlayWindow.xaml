@@ -20,12 +20,6 @@
         </Border.Effect>
         <StackPanel>
             <Canvas x:Name="PreviewBox" Width="462" Height="22" ClipToBounds="True" Margin="0,0,0,10" Visibility="Collapsed">
-                <Canvas.OpacityMask>
-                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
-                        <GradientStop Color="#00000000" Offset="0" />
-                        <GradientStop Color="#FF000000" Offset="0.6" />
-                    </LinearGradientBrush>
-                </Canvas.OpacityMask>
                 <TextBlock x:Name="Preview" Foreground="#E6FFFFFF" FontSize="14" TextWrapping="NoWrap" />
             </Canvas>
             <Grid>

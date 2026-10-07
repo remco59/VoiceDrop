@@ -132,7 +132,18 @@ public partial class OverlayWindow : Window
 
     public void PushLevel(float level) => _target = level;
 
-    private const int PreviewWords = 16;
+    private static readonly LinearGradientBrush FadeMask = MakeFade();
+
+    private static LinearGradientBrush MakeFade()
+    {
+        var b = new LinearGradientBrush { StartPoint = new Point(0, 0), EndPoint = new Point(1, 0) };
+        b.GradientStops.Add(new GradientStop(Color.FromArgb(0, 0, 0, 0), 0));
+        b.GradientStops.Add(new GradientStop(Colors.Black, 0.45));
+        b.Freeze();
+        return b;
+    }
+
+    private const int PreviewWords = 40; // generous cap; the box width decides what is visible
 
     public void SetPreview(string text)
     {
@@ -146,7 +157,9 @@ public partial class OverlayWindow : Window
 
         // keep the newest words visible: right-align inside the clipped box
         Preview.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-        Canvas.SetLeft(Preview, Math.Min(0, PreviewBox.Width - Preview.DesiredSize.Width));
+        bool overflow = Preview.DesiredSize.Width > PreviewBox.Width;
+        Canvas.SetLeft(Preview, overflow ? PreviewBox.Width - Preview.DesiredSize.Width : 0);
+        PreviewBox.OpacityMask = overflow ? FadeMask : null; // fade only once the text runs out of room
     }
 
     private void SetClickThrough(bool on)

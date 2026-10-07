@@ -3,12 +3,12 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
         ShowInTaskbar="False" Topmost="True" ShowActivated="False" Focusable="False"
-        SizeToContent="WidthAndHeight" ResizeMode="NoResize"
+        SizeToContent="Manual" Width="616" Height="200" ResizeMode="NoResize"
         TextOptions.TextFormattingMode="Ideal" UseLayoutRounding="True">
     <Grid>
 
         <!-- glass card -->
-        <Border x:Name="Pill" Margin="28" Width="560" CornerRadius="28" Padding="26,20,22,18"
+        <Border x:Name="Pill" VerticalAlignment="Bottom" Margin="28" Width="560" CornerRadius="28" Padding="26,20,22,18"
                 BorderThickness="1" TextElement.FontFamily="Segoe UI Variable Display, Segoe UI">
             <Border.Background>
                 <LinearGradientBrush StartPoint="0,0" EndPoint="1,0.35">

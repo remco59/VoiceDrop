@@ -1,6 +1,8 @@
 using System;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Windows;
+using System.Windows.Media.Animation;
 using System.Windows.Controls;
 using System.Windows.Interop;
 using System.Windows.Media;
@@ -9,11 +11,19 @@ using System.Windows.Threading;
 
 namespace VoiceDrop;
 
-/// <summary>Floating pill (bottom centre) with live waveform and transcript preview. Never takes focus.</summary>
+/// <summary>
+/// Floating glass card with live waveform and transcript. Never takes focus and is always click-through.
+/// The window is sized and positioned by us in one SetWindowPos per frame, anchored at the bottom, so it never jumps.
+/// </summary>
 public partial class OverlayWindow : Window
 {
     private const int BarCount = 25, Mid = BarCount / 2;
     private const int GWL_EXSTYLE = -20, WS_EX_NOACTIVATE = 0x08000000, WS_EX_TOOLWINDOW = 0x80, WS_EX_TRANSPARENT = 0x20;
+    private const double WindowWidthDip = 616;       // card (560) + 2 * 28 margin for the shadow
+    private const double CardLiftDip = 12;           // gap between card and the bottom of the work area
+    private const double ShadowMarginDip = 28;
+    private const double CollapsedHeight = 52;       // 2 lines at 26 px
+    private const double PreviewGap = 16;            // space between transcript and waveform row
 
     [DllImport("user32.dll")] private static extern int GetWindowLong(IntPtr hWnd, int nIndex);
     [DllImport("user32.dll")] private static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
@@ -24,10 +34,11 @@ public partial class OverlayWindow : Window
     [DllImport("user32.dll")] private static extern IntPtr MonitorFromPoint(POINT pt, uint flags);
     [DllImport("user32.dll")] private static extern bool GetMonitorInfo(IntPtr hMon, ref MONITORINFO info);
     [DllImport("user32.dll")] private static extern bool GetCursorPos(out POINT pt);
-    [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr hWnd, out RECT r);
     [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr hWnd, IntPtr after, int x, int y, int cx, int cy, uint flags);
+    [DllImport("user32.dll")] private static extern short GetAsyncKeyState(int vKey);
+    [DllImport("shcore.dll")] private static extern int GetDpiForMonitor(IntPtr hMon, int type, out uint dpiX, out uint dpiY);
 
-    private const uint MONITOR_DEFAULTTONEAREST = 2, SWP_NOSIZE = 0x1, SWP_NOZORDER = 0x4, SWP_NOACTIVATE = 0x10;
+    private const uint MONITOR_DEFAULTTONEAREST = 2, SWP_NOZORDER = 0x4, SWP_NOACTIVATE = 0x10;
 
     [StructLayout(LayoutKind.Sequential)] private struct POINT { public int X, Y; }
     [StructLayout(LayoutKind.Sequential)] private struct RECT { public int Left, Top, Right, Bottom; }
@@ -62,9 +73,21 @@ public partial class OverlayWindow : Window
     private readonly Rectangle[] _bars = new Rectangle[BarCount];
     private readonly float[] _levels = new float[Mid + 1]; // [0] = newest, mirrored outwards from the centre
     private readonly DispatcherTimer _anim = new() { Interval = TimeSpan.FromMilliseconds(40) };
+    private readonly DispatcherTimer _poll = new() { Interval = TimeSpan.FromMilliseconds(60) };
+    private readonly Stopwatch _clock = Stopwatch.StartNew();
     private float _target;
-    private bool _processing;
-    private double _phase;
+    private bool _processing, _wasDown, _wantVisible, _expanded, _frameHooked;
+    private double _phase, _lastFrame, _restDip;
+
+    // screen anchor (physical pixels), fixed for the whole recording
+    private int _anchorCenterX, _anchorBottom;
+    private double _scale = 1;
+    private int _lastX = int.MinValue, _lastY, _lastW, _lastH;
+
+    // transcript animation state
+    private string _fullText = "";
+    private int _shownLen;
+    private double _curBox, _curTop;
 
     public OverlayWindow()
     {
@@ -85,41 +108,53 @@ public partial class OverlayWindow : Window
             var h = new WindowInteropHelper(this).Handle;
             SetWindowLong(h, GWL_EXSTYLE, GetWindowLong(h, GWL_EXSTYLE) | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_TRANSPARENT);
         };
-        SizeChanged += (_, _) => Reposition();
     }
 
-    private void Reposition()
-    {
-        var hwnd = new WindowInteropHelper(this).Handle;
-        if (hwnd == IntPtr.Zero) return;
-        var mi = new MONITORINFO { cbSize = Marshal.SizeOf<MONITORINFO>() };
-        if (!GetMonitorInfo(TargetMonitor(), ref mi)) return;
-        GetWindowRect(hwnd, out var r);
-        int w = r.Right - r.Left, h = r.Bottom - r.Top;
-        int x = mi.rcWork.Left + (mi.rcWork.Right - mi.rcWork.Left - w) / 2;
-        // the window has a 28 DIP transparent margin for the shadow; put the card itself 12 DIP above the work area edge
-        int y = mi.rcWork.Bottom - h + (int)Math.Round(16 * System.Windows.Media.VisualTreeHelper.GetDpi(this).DpiScaleY);
-        SetWindowPos(hwnd, IntPtr.Zero, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
-    }
+    // ---------- show / hide ----------
 
     public void ShowListening()
     {
         _processing = false;
-        Preview.Text = "";
-        _fullText = "";
+        _wantVisible = true;
         _expanded = false;
+        _fullText = "";
+        _shownLen = 0;
+        _curBox = _curTop = 0;
+        Preview.Text = "";
+        PreviewBox.Height = 0;
         PreviewBox.Visibility = Visibility.Collapsed;
+        PreviewBox.OpacityMask = null;
         LangChip.Visibility = Visibility.Collapsed;
         StatusText.Text = AppSettings.Current.TapToToggle ? "Listening · release to stop" : "Listening";
         Array.Clear(_levels);
+
+        // base height of the card without transcript (measured once per show)
+        PreviewBox.Visibility = Visibility.Collapsed;
+        Pill.Measure(new Size(WindowWidthDip, double.PositiveInfinity));
+        _restDip = Pill.DesiredSize.Height;
+
+        // pick the monitor once; the card stays put for the whole recording
+        var mon = TargetMonitor();
+        var mi = new MONITORINFO { cbSize = Marshal.SizeOf<MONITORINFO>() };
+        if (GetMonitorInfo(mon, ref mi))
+        {
+            _anchorCenterX = (mi.rcWork.Left + mi.rcWork.Right) / 2;
+            _anchorBottom = mi.rcWork.Bottom + (int)Math.Round((ShadowMarginDip - CardLiftDip) * ScaleOf(mon));
+            _scale = ScaleOf(mon);
+        }
+        _lastX = int.MinValue;
+
+        BeginAnimation(OpacityProperty, null);
+        Opacity = 0;
+        if (!IsVisible) Show();
+        ApplyWindowRect(force: true);
+        BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(160)) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } });
+
         _anim.Start();
         _poll.Start();
-        if (!IsVisible) Show();
-        UpdateLayout();
-        Reposition();
+        _lastFrame = _clock.Elapsed.TotalSeconds;
+        if (!_frameHooked) { CompositionTarget.Rendering += OnFrame; _frameHooked = true; }
     }
-
-    public void SetHint(string text) => StatusText.Text = text;
 
     public void ShowTranscribing()
     {
@@ -129,13 +164,42 @@ public partial class OverlayWindow : Window
 
     public void HideOverlay()
     {
-        _anim.Stop();
-        _poll.Stop();
+        if (!_wantVisible) return;
+        _wantVisible = false;
         _expanded = false;
-        Hide();
+        var fade = new DoubleAnimation(Opacity, 0, TimeSpan.FromMilliseconds(200)) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn } };
+        fade.Completed += (_, _) =>
+        {
+            if (_wantVisible) return;
+            _anim.Stop();
+            _poll.Stop();
+            if (_frameHooked) { CompositionTarget.Rendering -= OnFrame; _frameHooked = false; }
+            Hide();
+        };
+        BeginAnimation(OpacityProperty, fade);
     }
 
+    public void SetHint(string text) => StatusText.Text = text;
     public void PushLevel(float level) => _target = level;
+
+    public void SetLanguage(string code)
+    {
+        if (string.IsNullOrEmpty(code)) { LangChip.Visibility = Visibility.Collapsed; return; }
+        LangText.Text = code.ToUpperInvariant();
+        LangChip.Visibility = Visibility.Visible;
+    }
+
+    public void SetPreview(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return;
+        // text revisions: keep what is already on screen up to the first difference, then type the rest
+        int common = 0, max = Math.Min(Math.Min(_shownLen, _fullText.Length), text.Length);
+        while (common < max && _fullText[common] == text[common]) common++;
+        _shownLen = Math.Min(_shownLen, common);
+        _fullText = text;
+    }
+
+    // ---------- per-frame animation ----------
 
     private static readonly LinearGradientBrush FadeMask = MakeFade();
 
@@ -148,50 +212,79 @@ public partial class OverlayWindow : Window
         return b;
     }
 
-    private const double CollapsedHeight = 52;   // 2 lines at 26 px
-    private string _fullText = "";
-    private bool _expanded;
-
-    public void SetPreview(string text)
+    private void OnFrame(object? sender, EventArgs e)
     {
-        if (string.IsNullOrWhiteSpace(text)) return;
-        _fullText = text;
-        RenderPreview();
-    }
+        double now = _clock.Elapsed.TotalSeconds;
+        double dt = Math.Clamp(now - _lastFrame, 0.001, 0.05);
+        _lastFrame = now;
+        double k = 1 - Math.Exp(-dt * 11); // exponential smoothing, frame-rate independent
 
-    /// <summary>Collapsed: newest 2 lines with a fade on top. Expanded (mouse over the card): grows to fit, up to most of the screen.</summary>
-    private void RenderPreview()
-    {
-        if (_fullText.Length == 0) return;
-        double max = CollapsedHeight;
-        if (_expanded)
+        // typewriter: reveal faster when far behind, always at least a couple of characters per frame
+        if (_shownLen < _fullText.Length)
         {
-            double screenDip = SystemParameters.WorkArea.Height;
-            max = Math.Max(CollapsedHeight, screenDip - 200);
+            int remaining = _fullText.Length - _shownLen;
+            _shownLen += Math.Max(1, (int)Math.Ceiling(remaining * (1 - Math.Exp(-dt * 7))));
+            _shownLen = Math.Min(_shownLen, _fullText.Length);
+        }
+        string shown = _fullText.Substring(0, _shownLen);
+
+        if (shown.Length > 0)
+        {
+            PreviewBox.Visibility = Visibility.Visible;
+            if (Preview.Text != shown) Preview.Text = shown;
+
+            double maxH = CollapsedHeight;
+            if (_expanded) maxH = Math.Max(CollapsedHeight, SystemParameters.WorkArea.Height - 220);
+
+            Preview.Measure(new Size(PreviewBox.Width, double.PositiveInfinity));
+            double h = Preview.DesiredSize.Height;
+            double targetBox = Math.Min(h, maxH);
+            double targetTop = targetBox - h;
+
+            _curBox += (targetBox - _curBox) * k;
+            _curTop += (targetTop - _curTop) * k;
+            if (Math.Abs(targetBox - _curBox) < 0.3) _curBox = targetBox;
+            if (Math.Abs(targetTop - _curTop) < 0.3) _curTop = targetTop;
+
+            PreviewBox.Height = Math.Max(0, _curBox);
+            Canvas.SetTop(Preview, _curTop);
+            PreviewBox.OpacityMask = _curTop < -0.5 ? FadeMask : null;
         }
 
-        var words = _fullText.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
-        Preview.Text = !_expanded && words.Length > 60 ? string.Join(' ', words[^60..]) : _fullText;
-        PreviewBox.Visibility = Visibility.Visible;
-
-        Preview.Measure(new Size(PreviewBox.Width, double.PositiveInfinity));
-        double h = Preview.DesiredSize.Height;
-        PreviewBox.Height = Math.Min(h, max);
-        Canvas.SetTop(Preview, PreviewBox.Height - h);
-        PreviewBox.OpacityMask = h > max ? FadeMask : null;
+        ApplyWindowRect(force: false);
     }
 
+    /// <summary>One SetWindowPos for size and position, bottom-anchored in physical pixels.</summary>
+    private void ApplyWindowRect(bool force)
+    {
+        var hwnd = new WindowInteropHelper(this).Handle;
+        if (hwnd == IntPtr.Zero || _anchorBottom == 0) return;
+
+        double hDip = _restDip + (PreviewBox.Visibility == Visibility.Visible ? PreviewBox.Height + PreviewGap : 0);
+        int w = (int)Math.Round(WindowWidthDip * _scale);
+        int h = (int)Math.Round(hDip * _scale);
+        int x = _anchorCenterX - w / 2;
+        int y = _anchorBottom - h;
+        if (!force && x == _lastX && y == _lastY && w == _lastW && h == _lastH) return;
+        _lastX = x; _lastY = y; _lastW = w; _lastH = h;
+        SetWindowPos(hwnd, IntPtr.Zero, x, y, w, h, SWP_NOZORDER | SWP_NOACTIVATE);
+    }
+
+    private static double ScaleOf(IntPtr monitor)
+    {
+        try { if (GetDpiForMonitor(monitor, 0, out var dx, out _) == 0 && dx > 0) return dx / 96.0; } catch { }
+        return 1.0;
+    }
+
+    // ---------- hover / click expansion ----------
     // The overlay is always click-through and never activatable, so "focus follows mouse" can not
     // steal the active window. Hover/click on the card is detected by polling the cursor instead.
-    [DllImport("user32.dll")] private static extern short GetAsyncKeyState(int vKey);
-    private readonly DispatcherTimer _poll = new() { Interval = TimeSpan.FromMilliseconds(60) };
-    private bool _wasDown;
 
     private bool CursorOverCard()
     {
         if (!GetCursorPos(out var c)) return false;
         var tl = Pill.PointToScreen(new Point(0, 0));
-        var dpi = System.Windows.Media.VisualTreeHelper.GetDpi(this);
+        var dpi = VisualTreeHelper.GetDpi(this);
         return c.X >= tl.X && c.X <= tl.X + Pill.ActualWidth * dpi.DpiScaleX
             && c.Y >= tl.Y && c.Y <= tl.Y + Pill.ActualHeight * dpi.DpiScaleY;
     }
@@ -208,15 +301,10 @@ public partial class OverlayWindow : Window
             if (CursorOverCard() && down && !_wasDown && _fullText.Length > 0) want = !_expanded;
             _wasDown = down;
         }
-        if (want != _expanded) { _expanded = want; RenderPreview(); }
+        _expanded = want;
     }
 
-    public void SetLanguage(string code)
-    {
-        if (string.IsNullOrEmpty(code)) { LangChip.Visibility = Visibility.Collapsed; return; }
-        LangText.Text = code.ToUpperInvariant();
-        LangChip.Visibility = Visibility.Visible;
-    }
+    // ---------- waveform ----------
 
     private void Animate()
     {

@@ -69,6 +69,7 @@
 
                     <RadioButton x:Name="NavDashboard" Style="{StaticResource Nav}" Tag="&#xE80F;" Content="Dashboard" GroupName="nav" IsChecked="True" />
                     <RadioButton x:Name="NavHistory" Style="{StaticResource Nav}" Tag="&#xE81C;" Content="History" GroupName="nav" />
+                    <RadioButton x:Name="NavDictionary" Style="{StaticResource Nav}" Tag="&#xE82D;" Content="Dictionary" GroupName="nav" />
                     <RadioButton x:Name="NavStats" Style="{StaticResource Nav}" Tag="&#xE9D2;" Content="Stats" GroupName="nav" />
 
                     <TextBlock Style="{StaticResource NavHeader}" Text="SETUP" />

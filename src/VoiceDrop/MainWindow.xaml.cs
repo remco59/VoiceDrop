@@ -22,6 +22,7 @@ public partial class MainWindow : Window
 
         NavDashboard.Checked += (_, _) => Show(new DashboardPage(_dictation));
         NavHistory.Checked += (_, _) => Show(new HistoryPage());
+        NavDictionary.Checked += (_, _) => Show(new DictionaryPage(_dictation));
         NavStats.Checked += (_, _) => Show(new StatsPage());
         NavEngine.Checked += (_, _) => Show(new VoiceEnginePage(_dictation));
         NavSettings.Checked += (_, _) => Show(new SettingsPage(this));

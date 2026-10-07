@@ -39,7 +39,7 @@ internal sealed class Transcriber : IDisposable
     private WhisperFactory? _factory;
     private WhisperProcessor? _processor;
     private string _loadedModel = "";
-    private string _loadedLanguage = "";
+    private string _loadedLanguage = "", _loadedPrompt = "";
 
     public bool IsLoaded => _processor != null;
 
@@ -53,7 +53,8 @@ internal sealed class Transcriber : IDisposable
         await _gate.WaitAsync();
         try
         {
-            if (_processor != null && _loadedModel == model.Id && _loadedLanguage == s.Language) return;
+            var prompt = DictionaryStore.PromptText();
+            if (_processor != null && _loadedModel == model.Id && _loadedLanguage == s.Language && _loadedPrompt == prompt) return;
 
             if (!ModelCatalog.IsDownloaded(model))
                 await DownloadAsync(model, status, progress);
@@ -68,8 +69,11 @@ internal sealed class Transcriber : IDisposable
                 _loadedModel = model.Id;
             }
             _processor?.Dispose();
-            _processor = _factory.CreateBuilder().WithLanguage(s.Language).Build();
+            var builder = _factory.CreateBuilder().WithLanguage(s.Language);
+            if (prompt.Length > 0) builder = builder.WithPrompt(prompt); // custom dictionary as vocabulary hint
+            _processor = builder.Build();
             _loadedLanguage = s.Language;
+            _loadedPrompt = prompt;
             status("Ready");
         }
         finally { _gate.Release(); }
@@ -113,7 +117,7 @@ internal sealed class Transcriber : IDisposable
                 if (lang.Length == 0) lang = seg.Language ?? "";
             }
             var text = Regex.Replace(Noise.Replace(sb.ToString(), ""), @"\s+", " ").Trim();
-            return new(text, lang);
+            return new(DictionaryStore.Apply(text), lang);
         }
         finally { _gate.Release(); }
     }

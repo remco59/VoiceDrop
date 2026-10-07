@@ -16,6 +16,47 @@ public partial class OverlayWindow : Window
 
     [DllImport("user32.dll")] private static extern int GetWindowLong(IntPtr hWnd, int nIndex);
     [DllImport("user32.dll")] private static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
+    [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr hWnd, IntPtr pid);
+    [DllImport("user32.dll")] private static extern bool GetGUIThreadInfo(uint idThread, ref GUITHREADINFO info);
+    [DllImport("user32.dll")] private static extern IntPtr MonitorFromWindow(IntPtr hWnd, uint flags);
+    [DllImport("user32.dll")] private static extern IntPtr MonitorFromPoint(POINT pt, uint flags);
+    [DllImport("user32.dll")] private static extern bool GetMonitorInfo(IntPtr hMon, ref MONITORINFO info);
+    [DllImport("user32.dll")] private static extern bool GetCursorPos(out POINT pt);
+    [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr hWnd, out RECT r);
+    [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr hWnd, IntPtr after, int x, int y, int cx, int cy, uint flags);
+
+    private const uint MONITOR_DEFAULTTONEAREST = 2, SWP_NOSIZE = 0x1, SWP_NOZORDER = 0x4, SWP_NOACTIVATE = 0x10;
+
+    [StructLayout(LayoutKind.Sequential)] private struct POINT { public int X, Y; }
+    [StructLayout(LayoutKind.Sequential)] private struct RECT { public int Left, Top, Right, Bottom; }
+    [StructLayout(LayoutKind.Sequential)] private struct MONITORINFO { public int cbSize; public RECT rcMonitor, rcWork; public uint dwFlags; }
+    [StructLayout(LayoutKind.Sequential)]
+    private struct GUITHREADINFO
+    {
+        public int cbSize; public uint flags;
+        public IntPtr hwndActive, hwndFocus, hwndCapture, hwndMenuOwner, hwndMoveSize, hwndCaret;
+        public RECT rcCaret;
+    }
+
+    /// <summary>Monitor that holds the focused text input (falls back to the foreground window, then the mouse).</summary>
+    private static IntPtr TargetMonitor()
+    {
+        var fg = GetForegroundWindow();
+        if (fg != IntPtr.Zero)
+        {
+            var info = new GUITHREADINFO { cbSize = Marshal.SizeOf<GUITHREADINFO>() };
+            if (GetGUIThreadInfo(GetWindowThreadProcessId(fg, IntPtr.Zero), ref info))
+            {
+                var h = info.hwndCaret != IntPtr.Zero ? info.hwndCaret
+                      : info.hwndFocus != IntPtr.Zero ? info.hwndFocus : fg;
+                return MonitorFromWindow(h, MONITOR_DEFAULTTONEAREST);
+            }
+            return MonitorFromWindow(fg, MONITOR_DEFAULTTONEAREST);
+        }
+        GetCursorPos(out var pt);
+        return MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
+    }
 
     private readonly Rectangle[] _bars = new Rectangle[BarCount];
     private readonly float[] _levels = new float[BarCount];
@@ -45,9 +86,15 @@ public partial class OverlayWindow : Window
 
     private void Reposition()
     {
-        var wa = SystemParameters.WorkArea;
-        Left = wa.Left + (wa.Width - ActualWidth) / 2;
-        Top = wa.Bottom - ActualHeight - 8;
+        var hwnd = new WindowInteropHelper(this).Handle;
+        if (hwnd == IntPtr.Zero) return;
+        var mi = new MONITORINFO { cbSize = Marshal.SizeOf<MONITORINFO>() };
+        if (!GetMonitorInfo(TargetMonitor(), ref mi)) return;
+        GetWindowRect(hwnd, out var r);
+        int w = r.Right - r.Left, h = r.Bottom - r.Top;
+        int x = mi.rcWork.Left + (mi.rcWork.Right - mi.rcWork.Left - w) / 2;
+        int y = mi.rcWork.Bottom - h - 8;
+        SetWindowPos(hwnd, IntPtr.Zero, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
     }
 
     public void ShowListening()
@@ -60,6 +107,7 @@ public partial class OverlayWindow : Window
         Array.Clear(_levels);
         _anim.Start();
         if (!IsVisible) Show();
+        UpdateLayout();
         Reposition();
     }
 

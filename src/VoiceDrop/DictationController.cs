@@ -69,9 +69,9 @@ internal sealed class DictationController : IDisposable
     }
 
     /// <summary>Runs the current cleanup settings on a text (used by the Try-it box); does not touch recording state.</summary>
-    public Task<string> PolishForPreviewAsync(string text) => PolishAsync(text, announce: false);
+    public Task<string> PolishForPreviewAsync(string text) => PolishAsync(text, "", announce: false);
 
-    private async Task<string> PolishAsync(string text, bool announce = true)
+    private async Task<string> PolishAsync(string text, string language, bool announce = true)
     {
         var s = AppSettings.Current;
         if (s.CleanupMode != "off") text = TextCleaner.Apply(text, s.VoiceCommands, s.CleanFillers);
@@ -81,7 +81,7 @@ internal sealed class DictationController : IDisposable
             try
             {
                 using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(8));
-                text = await Task.Run(() => Llm.CleanAsync(text, cts.Token));
+                text = await Task.Run(() => Llm.CleanAsync(text, language, cts.Token));
             }
             catch (Exception ex) { Log.Write("polish skipped: " + ex.Message); }
         }
@@ -155,7 +155,7 @@ internal sealed class DictationController : IDisposable
         try
         {
             var r = await Task.Run(() => _transcriber.TranscribeAsync(wav));
-            var finalText = string.IsNullOrWhiteSpace(r.Text) ? "" : await PolishAsync(r.Text);
+            var finalText = string.IsNullOrWhiteSpace(r.Text) ? "" : await PolishAsync(r.Text, r.Language);
             if (!string.IsNullOrWhiteSpace(finalText))
             {
                 bool endsWithBreak = finalText.EndsWith('\n');

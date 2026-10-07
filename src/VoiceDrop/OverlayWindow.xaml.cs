@@ -80,7 +80,6 @@ public partial class OverlayWindow : Window
         }
         _anim.Tick += (_, _) => Animate();
         _poll.Tick += (_, _) => PollCursor();
-        FullPopup.Opened += FullPopup_Opened;
         SourceInitialized += (_, _) =>
         {
             var h = new WindowInteropHelper(this).Handle;
@@ -107,8 +106,8 @@ public partial class OverlayWindow : Window
     {
         _processing = false;
         Preview.Text = "";
-        FullText.Text = "";
-        FullPopup.IsOpen = false;
+        _fullText = "";
+        _expanded = false;
         PreviewBox.Visibility = Visibility.Collapsed;
         LangChip.Visibility = Visibility.Collapsed;
         StatusText.Text = AppSettings.Current.TapToToggle ? "Listening · release to stop" : "Listening";
@@ -132,7 +131,7 @@ public partial class OverlayWindow : Window
     {
         _anim.Stop();
         _poll.Stop();
-        FullPopup.IsOpen = false;
+        _expanded = false;
         Hide();
     }
 
@@ -149,26 +148,37 @@ public partial class OverlayWindow : Window
         return b;
     }
 
-    private const int PreviewWords = 60;     // cap for very long dictations
-    private const double MaxPreviewHeight = 78; // 3 lines at 26 px
+    private const double CollapsedHeight = 52;   // 2 lines at 26 px
+    private string _fullText = "";
+    private bool _expanded;
 
     public void SetPreview(string text)
     {
         if (string.IsNullOrWhiteSpace(text)) return;
-        FullText.Text = text;
-        FullScroll.ScrollToEnd();
+        _fullText = text;
+        RenderPreview();
+    }
 
-        var words = text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
-        Preview.Text = words.Length > PreviewWords ? string.Join(' ', words[^PreviewWords..]) : text;
+    /// <summary>Collapsed: newest 2 lines with a fade on top. Expanded (mouse over the card): grows to fit, up to most of the screen.</summary>
+    private void RenderPreview()
+    {
+        if (_fullText.Length == 0) return;
+        double max = CollapsedHeight;
+        if (_expanded)
+        {
+            double screenDip = SystemParameters.WorkArea.Height;
+            max = Math.Max(CollapsedHeight, screenDip - 200);
+        }
+
+        var words = _fullText.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+        Preview.Text = !_expanded && words.Length > 60 ? string.Join(' ', words[^60..]) : _fullText;
         PreviewBox.Visibility = Visibility.Visible;
 
-        // grow up to 3 lines; beyond that the newest line stays at the bottom and the top fades out
         Preview.Measure(new Size(PreviewBox.Width, double.PositiveInfinity));
         double h = Preview.DesiredSize.Height;
-        bool overflow = h > MaxPreviewHeight;
-        PreviewBox.Height = Math.Min(h, MaxPreviewHeight);
+        PreviewBox.Height = Math.Min(h, max);
         Canvas.SetTop(Preview, PreviewBox.Height - h);
-        PreviewBox.OpacityMask = overflow ? FadeMask : null;
+        PreviewBox.OpacityMask = h > max ? FadeMask : null;
     }
 
     // The overlay is always click-through and never activatable, so "focus follows mouse" can not
@@ -189,25 +199,16 @@ public partial class OverlayWindow : Window
     private void PollCursor()
     {
         var mode = AppSettings.Current.FullTextMode;
-        if (mode == "off") { FullPopup.IsOpen = false; return; }
-        bool over = CursorOverCard();
-        if (mode == "hover")
-            FullPopup.IsOpen = over && FullText.Text.Length > 0;
-        else // click
+        bool want = _expanded;
+        if (mode == "off") want = false;
+        else if (mode == "hover") want = CursorOverCard() && _fullText.Length > 0;
+        else // click: toggles
         {
             bool down = (GetAsyncKeyState(0x01) & 0x8000) != 0;
-            if (over && down && !_wasDown && FullText.Text.Length > 0) FullPopup.IsOpen = !FullPopup.IsOpen;
+            if (CursorOverCard() && down && !_wasDown && _fullText.Length > 0) want = !_expanded;
             _wasDown = down;
         }
-    }
-
-    private void FullPopup_Opened(object? sender, EventArgs e)
-    {
-        if (FullPopup.Child != null && PresentationSource.FromVisual(FullPopup.Child) is HwndSource src)
-        {
-            int ex = GetWindowLong(src.Handle, GWL_EXSTYLE);
-            SetWindowLong(src.Handle, GWL_EXSTYLE, ex | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_TRANSPARENT);
-        }
+        if (want != _expanded) { _expanded = want; RenderPreview(); }
     }
 
     public void SetLanguage(string code)

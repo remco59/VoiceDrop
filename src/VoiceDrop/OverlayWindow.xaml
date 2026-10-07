@@ -6,16 +6,6 @@
         SizeToContent="WidthAndHeight" ResizeMode="NoResize"
         TextOptions.TextFormattingMode="Ideal" UseLayoutRounding="True">
     <Grid>
-        <Popup x:Name="FullPopup" PlacementTarget="{Binding ElementName=Pill}" Placement="Top" AllowsTransparency="True"
-               StaysOpen="True" PopupAnimation="Fade" VerticalOffset="-6" Focusable="False">
-            <Border Background="#F0171A1D" CornerRadius="22" BorderBrush="#33FFFFFF" BorderThickness="1"
-                    Padding="24,16" Width="560" Margin="0,0,0,8">
-                <ScrollViewer x:Name="FullScroll" MaxHeight="300" VerticalScrollBarVisibility="Auto">
-                    <TextBlock x:Name="FullText" Foreground="#F2FFFFFF" FontSize="16" LineHeight="24"
-                               FontFamily="Segoe UI Variable Display, Segoe UI" TextWrapping="Wrap" />
-                </ScrollViewer>
-            </Border>
-        </Popup>
 
         <!-- glass card -->
         <Border x:Name="Pill" Margin="28" Width="560" CornerRadius="28" Padding="26,20,22,18"

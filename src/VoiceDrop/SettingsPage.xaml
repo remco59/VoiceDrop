@@ -36,9 +36,9 @@
 
             <Border Style="{StaticResource Card}">
                 <StackPanel>
-                    <TextBlock Style="{StaticResource SectionTitle}" Text="Full text popup" />
+                    <TextBlock Style="{StaticResource SectionTitle}" Text="Expand full text" />
                     <TextBlock Style="{StaticResource Secondary}" Margin="0,2,0,12"
-                               Text="The overlay shows only the last words. Open the full live text in a popup by hovering or clicking the overlay." />
+                               Text="The overlay shows the last two lines. Move over it (or click it) and it grows to show everything you said so far." />
                     <WrapPanel x:Name="FullTextChips" />
                 </StackPanel>
             </Border>

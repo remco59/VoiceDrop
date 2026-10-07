@@ -73,7 +73,7 @@ public partial class App : Application
         if (AppSettings.Current.TapToToggle && DateTime.UtcNow - _pressedAt < TimeSpan.FromSeconds(1))
         {
             _latched = true;
-            _overlay?.SetHint("Tap again to stop");
+            _overlay?.SetHint("Listening · tap to stop");
             return;
         }
         await _dictation.EndListeningAsync();

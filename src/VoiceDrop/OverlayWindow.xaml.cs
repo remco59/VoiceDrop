@@ -12,7 +12,7 @@ namespace VoiceDrop;
 /// <summary>Floating pill (bottom centre) with live waveform and transcript preview. Never takes focus.</summary>
 public partial class OverlayWindow : Window
 {
-    private const int BarCount = 11;
+    private const int BarCount = 25, Mid = BarCount / 2;
     private const int GWL_EXSTYLE = -20, WS_EX_NOACTIVATE = 0x08000000, WS_EX_TOOLWINDOW = 0x80, WS_EX_TRANSPARENT = 0x20;
 
     [DllImport("user32.dll")] private static extern int GetWindowLong(IntPtr hWnd, int nIndex);
@@ -60,7 +60,7 @@ public partial class OverlayWindow : Window
     }
 
     private readonly Rectangle[] _bars = new Rectangle[BarCount];
-    private readonly float[] _levels = new float[BarCount];
+    private readonly float[] _levels = new float[Mid + 1]; // [0] = newest, mirrored outwards from the centre
     private readonly DispatcherTimer _anim = new() { Interval = TimeSpan.FromMilliseconds(40) };
     private float _target;
     private bool _processing;
@@ -71,8 +71,10 @@ public partial class OverlayWindow : Window
         InitializeComponent();
         for (int i = 0; i < BarCount; i++)
         {
-            var r = new Rectangle { Width = 4, Height = 4, RadiusX = 2, RadiusY = 2, Margin = new Thickness(2, 0, 2, 0),
-                                    Fill = Brushes.White, VerticalAlignment = VerticalAlignment.Center };
+            double t = i / (double)(BarCount - 1);
+            var color = Color.FromRgb((byte)(79 + 45 * t), (byte)(140 - 48 * t), 255); // blue -> indigo
+            var r = new Rectangle { Width = 3.2, Height = 4, RadiusX = 1.6, RadiusY = 1.6, Margin = new Thickness(0.9, 0, 0.9, 0),
+                                    Fill = new SolidColorBrush(color), VerticalAlignment = VerticalAlignment.Center };
             _bars[i] = r;
             Bars.Children.Add(r);
         }
@@ -94,7 +96,8 @@ public partial class OverlayWindow : Window
         GetWindowRect(hwnd, out var r);
         int w = r.Right - r.Left, h = r.Bottom - r.Top;
         int x = mi.rcWork.Left + (mi.rcWork.Right - mi.rcWork.Left - w) / 2;
-        int y = mi.rcWork.Bottom - h - 8;
+        // the window has a 28 DIP transparent margin for the shadow; put the card itself 12 DIP above the work area edge
+        int y = mi.rcWork.Bottom - h + (int)Math.Round(16 * System.Windows.Media.VisualTreeHelper.GetDpi(this).DpiScaleY);
         SetWindowPos(hwnd, IntPtr.Zero, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
     }
 
@@ -107,7 +110,7 @@ public partial class OverlayWindow : Window
         PreviewBox.Visibility = Visibility.Collapsed;
         SetClickThrough(AppSettings.Current.FullTextMode == "off");
         LangChip.Visibility = Visibility.Collapsed;
-        StatusText.Text = "Listening";
+        StatusText.Text = AppSettings.Current.TapToToggle ? "Listening · release to stop" : "Listening";
         Array.Clear(_levels);
         _anim.Start();
         if (!IsVisible) Show();
@@ -136,14 +139,15 @@ public partial class OverlayWindow : Window
 
     private static LinearGradientBrush MakeFade()
     {
-        var b = new LinearGradientBrush { StartPoint = new Point(0, 0), EndPoint = new Point(1, 0) };
+        var b = new LinearGradientBrush { StartPoint = new Point(0, 0), EndPoint = new Point(0, 1) };
         b.GradientStops.Add(new GradientStop(Color.FromArgb(0, 0, 0, 0), 0));
-        b.GradientStops.Add(new GradientStop(Colors.Black, 0.45));
+        b.GradientStops.Add(new GradientStop(Colors.Black, 0.4));
         b.Freeze();
         return b;
     }
 
-    private const int PreviewWords = 40; // generous cap; the box width decides what is visible
+    private const int PreviewWords = 60;     // cap for very long dictations
+    private const double MaxPreviewHeight = 78; // 3 lines at 26 px
 
     public void SetPreview(string text)
     {
@@ -155,11 +159,13 @@ public partial class OverlayWindow : Window
         Preview.Text = words.Length > PreviewWords ? string.Join(' ', words[^PreviewWords..]) : text;
         PreviewBox.Visibility = Visibility.Visible;
 
-        // keep the newest words visible: right-align inside the clipped box
-        Preview.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-        bool overflow = Preview.DesiredSize.Width > PreviewBox.Width;
-        Canvas.SetLeft(Preview, overflow ? PreviewBox.Width - Preview.DesiredSize.Width : 0);
-        PreviewBox.OpacityMask = overflow ? FadeMask : null; // fade only once the text runs out of room
+        // grow up to 3 lines; beyond that the newest line stays at the bottom and the top fades out
+        Preview.Measure(new Size(PreviewBox.Width, double.PositiveInfinity));
+        double h = Preview.DesiredSize.Height;
+        bool overflow = h > MaxPreviewHeight;
+        PreviewBox.Height = Math.Min(h, MaxPreviewHeight);
+        Canvas.SetTop(Preview, PreviewBox.Height - h);
+        PreviewBox.OpacityMask = overflow ? FadeMask : null;
     }
 
     private void SetClickThrough(bool on)
@@ -194,18 +200,20 @@ public partial class OverlayWindow : Window
 
     private void Animate()
     {
-        _phase += 0.35;
-        for (int i = 0; i < BarCount - 1; i++) _levels[i] = _levels[i + 1];
-        float v = _processing ? (float)(0.25 + 0.2 * Math.Sin(_phase)) : _target;
-        _levels[^1] = _levels[^1] * 0.4f + v * 0.6f;
+        _phase += 0.3;
+        for (int i = _levels.Length - 1; i > 0; i--) _levels[i] = _levels[i - 1];
+        float v = _processing ? (float)(0.3 + 0.25 * Math.Sin(_phase)) : _target;
+        _levels[0] = _levels[0] * 0.35f + v * 0.65f;
 
         for (int i = 0; i < BarCount; i++)
         {
-            double mid = 1.0 - Math.Abs(i - (BarCount - 1) / 2.0) / BarCount;   // taller in the centre
-            double h = 4 + _levels[i] * 22 * mid;
-            if (_processing) h = 4 + 10 * (0.5 + 0.5 * Math.Sin(_phase + i * 0.7));
-            _bars[i].Height = Math.Max(4, h);
-            _bars[i].Opacity = _processing ? 0.7 : 0.55 + 0.45 * mid;
+            int d = Math.Abs(i - Mid);
+            double env = Math.Exp(-Math.Pow(d / (Mid * 0.62), 2));           // tall in the centre, dots at the edges
+            double lvl = _processing ? 0.5 + 0.5 * Math.Sin(_phase - d * 0.55) : _levels[d];
+            double h = 4 + lvl * 32 * env;
+            if (_processing) h = 4 + 14 * lvl * env;
+            _bars[i].Height = Math.Min(34, Math.Max(3.2, h));
+            _bars[i].Opacity = 0.45 + 0.55 * env;
         }
     }
 }

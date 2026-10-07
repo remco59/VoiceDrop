@@ -164,10 +164,10 @@ public partial class OverlayWindow : Window
         if (!_frameHooked) { CompositionTarget.Rendering += OnFrame; _frameHooked = true; }
     }
 
-    public void ShowTranscribing()
+    public void ShowTranscribing(string text = "Transcribing")
     {
         _processing = true;
-        StatusText.Text = "Transcribing";
+        StatusText.Text = text;
     }
 
     public void HideOverlay()

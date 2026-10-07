@@ -18,6 +18,10 @@ internal sealed class AppSettings
     public bool PlaySounds { get; set; } = true;
     public string StartSound { get; set; } = "glass";
     public string FullTextMode { get; set; } = "hover"; // off | hover | click
+    public string CleanupMode { get; set; } = "basic";   // off | basic | smart
+    public bool CleanFillers { get; set; } = true;
+    public bool VoiceCommands { get; set; } = true;
+    public string LlmId { get; set; } = "qwen-1.5b";
     public bool TapToToggle { get; set; } = true;
     public bool StartWithWindows { get; set; }
     public bool StartMinimized { get; set; }

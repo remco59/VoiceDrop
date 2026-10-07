@@ -32,7 +32,7 @@ public partial class App : Application
         _dictation.Error += msg => _tray?.ShowBalloonTip(4000, "VoiceDrop", msg, Forms.ToolTipIcon.Error);
 
         BuildTray();
-        if (!AppSettings.Current.StartMinimized) _main.Show();
+        if (!AppSettings.Current.StartMinimized || Array.IndexOf(e.Args, "--show") >= 0) _main.Show();
 
         try
         {
@@ -116,7 +116,7 @@ public partial class App : Application
                 if (AppSettings.Current.ShowOverlay) _overlay.ShowListening();
                 break;
             case DictationState.Transcribing:
-                if (AppSettings.Current.ShowOverlay) _overlay.ShowTranscribing();
+                if (AppSettings.Current.ShowOverlay) _overlay.ShowTranscribing(_dictation.StatusText);
                 break;
             default:
                 _overlay.HideOverlay();

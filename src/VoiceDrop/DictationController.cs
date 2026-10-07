@@ -19,6 +19,7 @@ internal sealed class DictationController : IDisposable
     public string StatusText { get; private set; } = "Starting...";
     public string DetectedLanguage { get; private set; } = "";
     public Transcriber Transcriber => _transcriber;
+    public LocalLlm Llm { get; } = new();
 
     public event Action? StateChanged;
     public event Action<float>? Level;
@@ -50,6 +51,7 @@ internal sealed class DictationController : IDisposable
             await _transcriber.LoadAsync(s => _ui.Invoke(() => { StatusText = s; StateChanged?.Invoke(); }),
                 p => _ui.Invoke(() => DownloadProgress?.Invoke(p)));
             Set(DictationState.Idle, "Ready");
+            WarmUpLlm();
         }
         catch (Exception ex)
         {
@@ -57,6 +59,33 @@ internal sealed class DictationController : IDisposable
             Set(wasState == DictationState.Loading ? DictationState.Loading : DictationState.Idle, "Model failed to load");
             Error?.Invoke(ex.Message);
         }
+    }
+
+    /// <summary>Loads the polishing model in the background so the first dictation is not delayed.</summary>
+    public void WarmUpLlm()
+    {
+        if (AppSettings.Current.CleanupMode != "smart" || !LlmCatalog.IsDownloaded(LlmCatalog.Get(AppSettings.Current.LlmId))) return;
+        _ = Task.Run(async () => { try { await Llm.EnsureLoadedAsync(); } catch (Exception ex) { Log.Write("llm warm-up failed: " + ex.Message); } });
+    }
+
+    /// <summary>Runs the current cleanup settings on a text (used by the Try-it box); does not touch recording state.</summary>
+    public Task<string> PolishForPreviewAsync(string text) => PolishAsync(text, announce: false);
+
+    private async Task<string> PolishAsync(string text, bool announce = true)
+    {
+        var s = AppSettings.Current;
+        if (s.CleanupMode != "off") text = TextCleaner.Apply(text, s.VoiceCommands, s.CleanFillers);
+        if (s.CleanupMode == "smart" && text.Length >= 12 && LlmCatalog.IsDownloaded(LlmCatalog.Get(s.LlmId)))
+        {
+            if (announce) Set(DictationState.Transcribing, "Polishing");
+            try
+            {
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(8));
+                text = await Task.Run(() => Llm.CleanAsync(text, cts.Token));
+            }
+            catch (Exception ex) { Log.Write("polish skipped: " + ex.Message); }
+        }
+        return text;
     }
 
     public void BeginListening()
@@ -126,10 +155,12 @@ internal sealed class DictationController : IDisposable
         try
         {
             var r = await Task.Run(() => _transcriber.TranscribeAsync(wav));
-            if (!string.IsNullOrWhiteSpace(r.Text))
+            var finalText = string.IsNullOrWhiteSpace(r.Text) ? "" : await PolishAsync(r.Text);
+            if (!string.IsNullOrWhiteSpace(finalText))
             {
-                TextInjector.Type(AppSettings.Current.TrailingSpace ? r.Text + " " : r.Text);
-                var entry = new HistoryEntry { Text = r.Text, Language = r.Language, Seconds = secs };
+                bool endsWithBreak = finalText.EndsWith('\n');
+                TextInjector.Type(AppSettings.Current.TrailingSpace && !endsWithBreak ? finalText + " " : finalText);
+                var entry = new HistoryEntry { Text = finalText, Language = r.Language, Seconds = secs };
                 if (r.Language.Length > 0) DetectedLanguage = r.Language;
                 if (AppSettings.Current.SaveHistory) HistoryStore.Add(entry);
                 Completed?.Invoke(entry);
@@ -148,6 +179,7 @@ internal sealed class DictationController : IDisposable
         _liveCts?.Cancel();
         _recorder.Dispose();
         _transcriber.Dispose();
+        Llm.Dispose();
     }
 }
 

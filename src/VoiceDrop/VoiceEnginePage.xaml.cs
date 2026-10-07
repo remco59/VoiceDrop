@@ -71,7 +71,7 @@ public partial class VoiceEnginePage : UserControl
                 action = new TextBlock { Text = "Active", Foreground = (System.Windows.Media.Brush)FindResource("Accent"), FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center };
             else
             {
-                var btn = new Button { Content = have ? "Use" : "Download", Style = have ? (Style)FindResource("AccentButton") : null, VerticalAlignment = VerticalAlignment.Center };
+                var btn = new Button { Content = have ? "Use" : "Download", Style = have ? (Style)FindResource("AccentButton") : (Style)FindResource(typeof(Button)), VerticalAlignment = VerticalAlignment.Center };
                 btn.Click += async (_, _) =>
                 {
                     btn.IsEnabled = false;

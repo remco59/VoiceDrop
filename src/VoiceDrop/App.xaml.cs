@@ -1,6 +1,5 @@
 using System;
 using System.Drawing;
-using System.Threading.Tasks;
 using System.Windows;
 using Forms = System.Windows.Forms;
 
@@ -8,89 +7,115 @@ namespace VoiceDrop;
 
 public partial class App : Application
 {
-    private const uint HoldKey = 0xA3; // Right Ctrl (VK_RCONTROL): hold to talk, release to insert
-
     private Forms.NotifyIcon? _tray;
     private PushToTalkHook? _hook;
-    private readonly Recorder _recorder = new();
-    private readonly Transcriber _transcriber = new();
-    private bool _ready, _busy;
+    private DictationController? _dictation;
+    private OverlayWindow? _overlay;
+    private MainWindow? _main;
 
     protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        AppSettings.Load();
+        Theme.Apply(AppSettings.Current.DarkTheme);
 
+        _dictation = new DictationController(Dispatcher);
+        _overlay = new OverlayWindow();
+        _main = new MainWindow(_dictation);
+
+        _dictation.StateChanged += OnStateChanged;
+        _dictation.Level += l => Dispatcher.BeginInvoke(() => _overlay.PushLevel(l));
+        _dictation.Partial += text => { _overlay.SetPreview(text); _overlay.SetLanguage(_dictation.DetectedLanguage); };
+        _dictation.Error += msg => _tray?.ShowBalloonTip(4000, "VoiceDrop", msg, Forms.ToolTipIcon.Error);
+
+        BuildTray();
+        if (!AppSettings.Current.StartMinimized) _main.Show();
+
+        try
+        {
+            RebindHotkey();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(ex.Message, "VoiceDrop: keyboard hook failed");
+        }
+
+        await _dictation.LoadModelAsync();
+    }
+
+    public void RebindHotkey()
+    {
+        _hook?.Dispose();
+        _hook = new PushToTalkHook(AppSettings.Current.HotkeyVk);
+        _hook.Pressed += () => Dispatcher.BeginInvoke(() => _dictation!.BeginListening());
+        _hook.Released += () => Dispatcher.BeginInvoke(async () => await _dictation!.EndListeningAsync());
+    }
+
+    private void OnStateChanged()
+    {
+        if (_dictation == null || _overlay == null) return;
+        switch (_dictation.State)
+        {
+            case DictationState.Listening:
+                if (AppSettings.Current.ShowOverlay) _overlay.ShowListening();
+                break;
+            case DictationState.Transcribing:
+                if (AppSettings.Current.ShowOverlay) _overlay.ShowTranscribing();
+                break;
+            default:
+                _overlay.HideOverlay();
+                break;
+        }
+        if (_tray != null)
+        {
+            var text = "VoiceDrop - " + _dictation.StatusText;
+            _tray.Text = text.Length > 63 ? text[..63] : text;
+        }
+    }
+
+    private void BuildTray()
+    {
         var menu = new Forms.ContextMenuStrip();
-        menu.Items.Add("Quit VoiceDrop", null, (_, _) => Shutdown());
-        _tray = new Forms.NotifyIcon
-        {
-            Icon = SystemIcons.Information,
-            Text = "VoiceDrop - starting",
-            Visible = true,
-            ContextMenuStrip = menu
-        };
-
-        try
-        {
-            await _transcriber.InitializeAsync(SetStatus);
-            _ready = true;
-            _hook = new PushToTalkHook(HoldKey);
-            _hook.Pressed += () => Dispatcher.BeginInvoke(OnPressed);
-            _hook.Released += () => Dispatcher.BeginInvoke(OnReleased);
-            _tray.ShowBalloonTip(2000, "VoiceDrop", "Hold Right Ctrl and speak.", Forms.ToolTipIcon.Info);
-        }
-        catch (Exception ex)
-        {
-            MessageBox.Show(ex.ToString(), "VoiceDrop failed to start");
-            Shutdown();
-        }
+        menu.Items.Add("Open VoiceDrop", null, (_, _) => ShowMain());
+        menu.Items.Add(new Forms.ToolStripSeparator());
+        menu.Items.Add("Quit", null, (_, _) => Shutdown());
+        _tray = new Forms.NotifyIcon { Icon = MakeIcon(), Text = "VoiceDrop", Visible = true, ContextMenuStrip = menu };
+        _tray.MouseClick += (_, ev) => { if (ev.Button == Forms.MouseButtons.Left) ShowMain(); };
     }
 
-    private void SetStatus(string s)
+    private void ShowMain()
     {
-        if (_tray == null) return;
-        var text = "VoiceDrop - " + s;
-        _tray.Text = text.Length > 63 ? text[..63] : text; // NotifyIcon.Text limit
+        if (_main == null) return;
+        _main.Show();
+        if (_main.WindowState == WindowState.Minimized) _main.WindowState = WindowState.Normal;
+        _main.Activate();
     }
 
-    private void OnPressed()
+    /// <summary>Rounded dark square with a green waveform, drawn at runtime so no image asset is needed.</summary>
+    private static Icon MakeIcon()
     {
-        if (!_ready || _busy || _recorder.IsRecording) return;
-        _recorder.Start();
-        SetStatus("listening...");
-        Console.Beep(900, 60);
-    }
-
-    private async void OnReleased()
-    {
-        if (!_recorder.IsRecording) return;
-        var wav = _recorder.Stop();
-        if (wav == null) { SetStatus("ready"); return; }
-
-        _busy = true;
-        SetStatus("transcribing...");
-        try
+        using var bmp = new Bitmap(32, 32);
+        using (var g = Graphics.FromImage(bmp))
         {
-            string text = await Task.Run(() => _transcriber.TranscribeAsync(wav));
-            if (!string.IsNullOrWhiteSpace(text)) TextInjector.Type(text + " ");
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            using var bg = new SolidBrush(Color.FromArgb(255, 18, 18, 18));
+            using var path = new System.Drawing.Drawing2D.GraphicsPath();
+            path.AddArc(0, 0, 10, 10, 180, 90); path.AddArc(21, 0, 10, 10, 270, 90);
+            path.AddArc(21, 21, 10, 10, 0, 90); path.AddArc(0, 21, 10, 10, 90, 90);
+            path.CloseFigure();
+            g.FillPath(bg, path);
+            using var green = new SolidBrush(Color.FromArgb(255, 52, 199, 120));
+            int[] h = [8, 16, 24, 14, 20, 10];
+            for (int i = 0; i < h.Length; i++)
+                g.FillRectangle(green, 4 + i * 4.4f, (32 - h[i]) / 2f, 2.8f, h[i]);
         }
-        catch (Exception ex)
-        {
-            _tray?.ShowBalloonTip(3000, "VoiceDrop error", ex.Message, Forms.ToolTipIcon.Error);
-        }
-        finally
-        {
-            wav.Dispose();
-            _busy = false;
-            SetStatus("ready");
-        }
+        return Icon.FromHandle(bmp.GetHicon());
     }
 
     protected override void OnExit(ExitEventArgs e)
     {
         _hook?.Dispose();
-        _recorder.Dispose();
-        _transcriber.Dispose();
+        _dictation?.Dispose();
         if (_tray != null) { _tray.Visible = false; _tray.Dispose(); }
         base.OnExit(e);
     }

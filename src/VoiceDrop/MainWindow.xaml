@@ -1,0 +1,85 @@
+<Window x:Class="VoiceDrop.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="VoiceDrop" Width="1020" Height="700" MinWidth="820" MinHeight="560"
+        WindowStartupLocation="CenterScreen" Background="{DynamicResource WindowBg}"
+        FontFamily="{StaticResource UiFont}">
+    <Window.Resources>
+        <Style x:Key="Nav" TargetType="RadioButton">
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Margin" Value="0,0,0,2" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RadioButton">
+                        <Border x:Name="b" CornerRadius="8" Padding="12,9" Background="Transparent">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock x:Name="ico" Text="{TemplateBinding Tag}" FontFamily="{StaticResource IconFont}" FontSize="15"
+                                           Width="22" Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center" />
+                                <TextBlock x:Name="lbl" Text="{TemplateBinding Content}" Foreground="{DynamicResource TextSecondary}" Margin="8,0,0,0" />
+                            </StackPanel>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="b" Property="Background" Value="{DynamicResource Hover}" /></Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="b" Property="Background" Value="{DynamicResource Selected}" />
+                                <Setter TargetName="lbl" Property="Foreground" Value="{DynamicResource TextPrimary}" />
+                                <Setter TargetName="ico" Property="Foreground" Value="{DynamicResource Accent}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="NavHeader" TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="{DynamicResource TextTertiary}" />
+            <Setter Property="Margin" Value="12,18,0,6" />
+        </Style>
+    </Window.Resources>
+
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="228" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <Border Background="{DynamicResource SidebarBg}" BorderBrush="{DynamicResource Separator}" BorderThickness="0,0,1,0">
+            <DockPanel Margin="12,16">
+                <!-- status -->
+                <Border DockPanel.Dock="Bottom" Background="{DynamicResource CardBg}" BorderBrush="{DynamicResource CardBorder}"
+                        BorderThickness="1" CornerRadius="10" Padding="12,10" Margin="0,8,0,0">
+                    <StackPanel Orientation="Horizontal">
+                        <Ellipse x:Name="StatusDot" Width="9" Height="9" Fill="{DynamicResource Warning}" VerticalAlignment="Center" />
+                        <StackPanel Margin="10,0,0,0">
+                            <TextBlock x:Name="StatusText" Text="Starting..." FontSize="13" FontWeight="Medium" />
+                            <TextBlock x:Name="StatusSub" Style="{StaticResource Secondary}" FontSize="11" Text="Vulkan GPU" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="8,0,0,12">
+                        <Border Width="30" Height="30" CornerRadius="8" Background="#0B0B0B" BorderBrush="{DynamicResource CardBorder}" BorderThickness="1">
+                            <TextBlock Text="&#xE720;" FontFamily="{StaticResource IconFont}" FontSize="15" Foreground="{DynamicResource Accent}"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <TextBlock Text="VoiceDrop" FontSize="17" FontWeight="Bold" VerticalAlignment="Center" Margin="10,0,0,0" />
+                    </StackPanel>
+
+                    <RadioButton x:Name="NavDashboard" Style="{StaticResource Nav}" Tag="&#xE80F;" Content="Dashboard" GroupName="nav" IsChecked="True" />
+                    <RadioButton x:Name="NavHistory" Style="{StaticResource Nav}" Tag="&#xE81C;" Content="History" GroupName="nav" />
+                    <RadioButton x:Name="NavStats" Style="{StaticResource Nav}" Tag="&#xE9D2;" Content="Stats" GroupName="nav" />
+
+                    <TextBlock Style="{StaticResource NavHeader}" Text="SETUP" />
+                    <RadioButton x:Name="NavEngine" Style="{StaticResource Nav}" Tag="&#xE9D9;" Content="Voice Engine" GroupName="nav" />
+                    <RadioButton x:Name="NavSettings" Style="{StaticResource Nav}" Tag="&#xE713;" Content="Settings" GroupName="nav" />
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <Border Grid.Column="1" Background="{DynamicResource ContentBg}">
+            <ContentControl x:Name="PageHost" />
+        </Border>
+    </Grid>
+</Window>

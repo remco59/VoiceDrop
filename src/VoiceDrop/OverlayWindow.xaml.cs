@@ -85,7 +85,7 @@ public partial class OverlayWindow : Window
     private int _lastX = int.MinValue, _lastY, _lastW, _lastH;
 
     // intro animation: small dot rises from the bottom edge, then grows into the card
-    private const double IntroSeconds = 0.65, DotSize = 26, RiseDip = 70;
+    private const double IntroSeconds = 0.45, DotSize = 26, RiseDip = 60;
     private double _introStart = -1, _naturalCardHeight = 120;
 
     // transcript animation state
@@ -139,6 +139,7 @@ public partial class OverlayWindow : Window
         _restDip = Pill.DesiredSize.Height;
         _naturalCardHeight = _restDip - 2 * ShadowMarginDip;
         _introStart = _clock.Elapsed.TotalSeconds;
+        Orb.RenderTransform = Lift; // share the rise transform with the card
         ApplyIntro(0);
 
         // pick the monitor once; the card stays put for the whole recording
@@ -153,10 +154,9 @@ public partial class OverlayWindow : Window
         _lastX = int.MinValue;
 
         BeginAnimation(OpacityProperty, null);
-        Opacity = 0;
+        Opacity = 1; // the orb itself fades in/out, no window-level fade on show
         if (!IsVisible) Show();
         ApplyWindowRect(force: true);
-        BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(120)) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } });
 
         _anim.Start();
         _poll.Start();
@@ -275,10 +275,11 @@ public partial class OverlayWindow : Window
             _introStart = -1;
             Pill.Width = 560; Pill.Height = double.NaN; Pill.CornerRadius = new CornerRadius(28);
             CardContent.Opacity = 1; Lift.Y = 0;
+            Pill.Opacity = 1; Orb.Opacity = 0;
             return;
         }
         p = Math.Max(0, p);
-        double rise = EaseOut(Math.Min(1, p / 0.5));
+        double rise = EaseOut(Math.Min(1, p / 0.4));
         double grow = EaseInOut(Math.Clamp((p - 0.3) / 0.7, 0, 1));
         double w = DotSize + (560 - DotSize) * grow;
         double natural = _naturalCardHeight + (PreviewBox.Visibility == Visibility.Visible ? PreviewBox.Height + PreviewGap : 0);
@@ -287,7 +288,13 @@ public partial class OverlayWindow : Window
         Pill.Height = h;
         Pill.CornerRadius = new CornerRadius(Math.Min(28, h / 2));
         Lift.Y = (1 - rise) * RiseDip;
-        CardContent.Opacity = Math.Clamp((grow - 0.55) / 0.45, 0, 1);
+        CardContent.Opacity = Math.Clamp((grow - 0.6) / 0.4, 0, 1);
+
+        // the orb takes the same shape as the card and cross-fades into it
+        Orb.Width = w; Orb.Height = h; Orb.CornerRadius = Pill.CornerRadius;
+        OrbRot.Angle = p * 300;
+        Orb.Opacity = 1 - EaseInOut(Math.Clamp((grow - 0.1) / 0.6, 0, 1));
+        Pill.Opacity = EaseInOut(Math.Clamp((grow - 0.05) / 0.6, 0, 1));
     }
 
     /// <summary>One SetWindowPos for size and position, bottom-anchored in physical pixels.</summary>

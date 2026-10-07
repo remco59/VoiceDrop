@@ -53,5 +53,23 @@
                 </Grid>
             </StackPanel>
         </Border>
+
+        <!-- intro orb: Siri-style blue gradient that morphs into the card -->
+        <Border x:Name="Orb" VerticalAlignment="Bottom" Margin="28" Width="26" Height="26" CornerRadius="13"
+                IsHitTestVisible="False" Opacity="0" RenderTransformOrigin="0.5,1">
+            <Border.Background>
+                <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                    <LinearGradientBrush.RelativeTransform>
+                        <RotateTransform x:Name="OrbRot" CenterX="0.5" CenterY="0.5" />
+                    </LinearGradientBrush.RelativeTransform>
+                    <GradientStop Color="#5FD4FF" Offset="0" />
+                    <GradientStop Color="#3F6BFF" Offset="0.5" />
+                    <GradientStop Color="#9B5CFF" Offset="1" />
+                </LinearGradientBrush>
+            </Border.Background>
+            <Border.Effect>
+                <DropShadowEffect BlurRadius="22" ShadowDepth="0" Color="#4F7BFF" Opacity="0.85" />
+            </Border.Effect>
+        </Border>
     </Grid>
 </Window>

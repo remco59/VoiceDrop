@@ -32,7 +32,7 @@ public partial class SettingsPage : UserControl
             chip.Checked += (_, _) => { s.StartSound = id; s.Save(); Sounds.Play(id); };
             SoundChips.Children.Add(chip);
         }
-        AddToggle("Tap to toggle", "Tap the key briefly (under 1 second) to keep recording; tap again to stop. Holding still works as push-to-talk.", () => s.TapToToggle, v => s.TapToToggle = v);
+        AddToggle("Tap to toggle", "Tap the key briefly (under 1 second) to keep recording; tap again to stop, double-tap to cancel. Holding still works as push-to-talk.", () => s.TapToToggle, v => s.TapToToggle = v);
         AddToggle("Show overlay", "Floating pill with waveform and live text while you speak.", () => s.ShowOverlay, v => s.ShowOverlay = v);
         AddToggle("Sounds", "Short beep when recording starts.", () => s.PlaySounds, v => s.PlaySounds = v);
         AddToggle("Add trailing space", "Put a space after inserted text so you can keep talking.", () => s.TrailingSpace, v => s.TrailingSpace = v);

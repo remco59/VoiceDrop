@@ -16,6 +16,9 @@ public partial class App : Application
     protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        Log.Write("app start");
+        DispatcherUnhandledException += (_, ex) => { Log.Write("unhandled: " + ex.Exception); ex.Handled = true; };
+        AppDomain.CurrentDomain.UnhandledException += (_, ex) => Log.Write("fatal: " + ex.ExceptionObject);
         AppSettings.Load();
         Theme.Apply(AppSettings.Current.DarkTheme);
 
@@ -51,19 +54,44 @@ public partial class App : Application
         _hook.Released += () => Dispatcher.BeginInvoke(OnHotkeyUp);
     }
 
-    private DateTime _pressedAt;
+    private static readonly TimeSpan DoubleTapWindow = TimeSpan.FromMilliseconds(450);
+    private DateTime _pressedAt = DateTime.MinValue;
     private bool _latched;
+    private System.Threading.CancellationTokenSource? _pendingStop;
 
     private async void OnHotkeyDown()
     {
-        if (_dictation!.State == DictationState.Listening && _latched)
+        var d = _dictation!;
+        Log.Write($"hotkey down (state {d.State}, latched {_latched})");
+        var now = DateTime.UtcNow;
+
+        if (d.State == DictationState.Listening && _latched)
         {
+            // second tap within the window (also while a stop is pending) = double tap = cancel
+            if (_pendingStop != null || now - _pressedAt < DoubleTapWindow)
+            {
+                _pendingStop?.Cancel();
+                _pendingStop = null;
+                _latched = false;
+                await d.CancelListeningAsync();
+                return;
+            }
+
+            // single tap: stop and insert, after a short wait to see whether a second tap turns it into a cancel
+            _pressedAt = now;
+            var cts = _pendingStop = new System.Threading.CancellationTokenSource();
+            try { await System.Threading.Tasks.Task.Delay(DoubleTapWindow, cts.Token); }
+            catch (OperationCanceledException) { return; }
+            if (!ReferenceEquals(_pendingStop, cts)) return;
+            _pendingStop = null;
             _latched = false;
-            await _dictation.EndListeningAsync();
+            await d.EndListeningAsync();
             return;
         }
-        _pressedAt = DateTime.UtcNow;
-        _dictation.BeginListening();
+
+        _pressedAt = now;
+        _latched = false;
+        d.BeginListening();
     }
 
     private async void OnHotkeyUp()

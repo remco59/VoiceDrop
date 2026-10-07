@@ -37,6 +37,7 @@ internal sealed class DictationController : IDisposable
     {
         State = s;
         if (status != null) StatusText = status;
+        Log.Write($"state {s} ({StatusText})");
         StateChanged?.Invoke();
     }
 
@@ -52,6 +53,7 @@ internal sealed class DictationController : IDisposable
         }
         catch (Exception ex)
         {
+            Log.Write("model load failed: " + ex);
             Set(wasState == DictationState.Loading ? DictationState.Loading : DictationState.Idle, "Model failed to load");
             Error?.Invoke(ex.Message);
         }
@@ -59,6 +61,8 @@ internal sealed class DictationController : IDisposable
 
     public void BeginListening()
     {
+        // a failed model load (for example no network during the first download) is retried on the next hotkey press
+        if (State == DictationState.Loading && StatusText == "Model failed to load") { _ = LoadModelAsync(); return; }
         if (State != DictationState.Idle) return;
         DetectedLanguage = "";
         _recorder.Start();
@@ -94,6 +98,18 @@ internal sealed class DictationController : IDisposable
         catch { /* preview is best effort */ }
     }
 
+    /// <summary>Stops recording and throws the audio away (double tap on the hotkey).</summary>
+    public async Task CancelListeningAsync()
+    {
+        if (State != DictationState.Listening) return;
+        _liveCts?.Cancel();
+        try { if (_liveTask != null) await _liveTask; } catch { }
+        _liveCts?.Dispose(); _liveCts = null; _liveTask = null;
+        _recorder.Stop()?.Dispose();
+        Log.Write("recording cancelled");
+        Set(DictationState.Idle, "Ready");
+    }
+
     public async Task EndListeningAsync()
     {
         if (State != DictationState.Listening) return;
@@ -119,7 +135,7 @@ internal sealed class DictationController : IDisposable
                 Completed?.Invoke(entry);
             }
         }
-        catch (Exception ex) { Error?.Invoke(ex.Message); }
+        catch (Exception ex) { Log.Write("transcribe failed: " + ex); Error?.Invoke(ex.Message); }
         finally
         {
             wav.Dispose();

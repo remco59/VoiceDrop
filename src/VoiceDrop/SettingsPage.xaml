@@ -38,7 +38,7 @@
                 <StackPanel>
                     <TextBlock Style="{StaticResource SectionTitle}" Text="Full text popup" />
                     <TextBlock Style="{StaticResource Secondary}" Margin="0,2,0,12"
-                               Text="The overlay shows only the last words. Open the full live text in a popup by hovering or clicking the overlay. Off keeps the overlay click-through." />
+                               Text="The overlay shows only the last words. Open the full live text in a popup by hovering or clicking the overlay." />
                     <WrapPanel x:Name="FullTextChips" />
                 </StackPanel>
             </Border>

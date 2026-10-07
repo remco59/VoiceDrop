@@ -79,6 +79,8 @@ public partial class OverlayWindow : Window
             Bars.Children.Add(r);
         }
         _anim.Tick += (_, _) => Animate();
+        _poll.Tick += (_, _) => PollCursor();
+        FullPopup.Opened += FullPopup_Opened;
         SourceInitialized += (_, _) =>
         {
             var h = new WindowInteropHelper(this).Handle;
@@ -108,11 +110,11 @@ public partial class OverlayWindow : Window
         FullText.Text = "";
         FullPopup.IsOpen = false;
         PreviewBox.Visibility = Visibility.Collapsed;
-        SetClickThrough(AppSettings.Current.FullTextMode == "off");
         LangChip.Visibility = Visibility.Collapsed;
         StatusText.Text = AppSettings.Current.TapToToggle ? "Listening · release to stop" : "Listening";
         Array.Clear(_levels);
         _anim.Start();
+        _poll.Start();
         if (!IsVisible) Show();
         UpdateLayout();
         Reposition();
@@ -129,6 +131,7 @@ public partial class OverlayWindow : Window
     public void HideOverlay()
     {
         _anim.Stop();
+        _poll.Stop();
         FullPopup.IsOpen = false;
         Hide();
     }
@@ -168,27 +171,43 @@ public partial class OverlayWindow : Window
         PreviewBox.OpacityMask = overflow ? FadeMask : null;
     }
 
-    private void SetClickThrough(bool on)
+    // The overlay is always click-through and never activatable, so "focus follows mouse" can not
+    // steal the active window. Hover/click on the card is detected by polling the cursor instead.
+    [DllImport("user32.dll")] private static extern short GetAsyncKeyState(int vKey);
+    private readonly DispatcherTimer _poll = new() { Interval = TimeSpan.FromMilliseconds(60) };
+    private bool _wasDown;
+
+    private bool CursorOverCard()
     {
-        var h = new WindowInteropHelper(this).Handle;
-        if (h == IntPtr.Zero) return;
-        int ex = GetWindowLong(h, GWL_EXSTYLE);
-        SetWindowLong(h, GWL_EXSTYLE, on ? ex | WS_EX_TRANSPARENT : ex & ~WS_EX_TRANSPARENT);
+        if (!GetCursorPos(out var c)) return false;
+        var tl = Pill.PointToScreen(new Point(0, 0));
+        var dpi = System.Windows.Media.VisualTreeHelper.GetDpi(this);
+        return c.X >= tl.X && c.X <= tl.X + Pill.ActualWidth * dpi.DpiScaleX
+            && c.Y >= tl.Y && c.Y <= tl.Y + Pill.ActualHeight * dpi.DpiScaleY;
     }
 
-    private void Pill_MouseEnter(object sender, System.Windows.Input.MouseEventArgs e)
+    private void PollCursor()
     {
-        if (AppSettings.Current.FullTextMode == "hover" && FullText.Text.Length > 0) FullPopup.IsOpen = true;
+        var mode = AppSettings.Current.FullTextMode;
+        if (mode == "off") { FullPopup.IsOpen = false; return; }
+        bool over = CursorOverCard();
+        if (mode == "hover")
+            FullPopup.IsOpen = over && FullText.Text.Length > 0;
+        else // click
+        {
+            bool down = (GetAsyncKeyState(0x01) & 0x8000) != 0;
+            if (over && down && !_wasDown && FullText.Text.Length > 0) FullPopup.IsOpen = !FullPopup.IsOpen;
+            _wasDown = down;
+        }
     }
 
-    private void Pill_MouseLeave(object sender, System.Windows.Input.MouseEventArgs e)
+    private void FullPopup_Opened(object? sender, EventArgs e)
     {
-        if (AppSettings.Current.FullTextMode == "hover") FullPopup.IsOpen = false;
-    }
-
-    private void Pill_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
-    {
-        if (AppSettings.Current.FullTextMode == "click" && FullText.Text.Length > 0) FullPopup.IsOpen = !FullPopup.IsOpen;
+        if (FullPopup.Child != null && PresentationSource.FromVisual(FullPopup.Child) is HwndSource src)
+        {
+            int ex = GetWindowLong(src.Handle, GWL_EXSTYLE);
+            SetWindowLong(src.Handle, GWL_EXSTYLE, ex | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_TRANSPARENT);
+        }
     }
 
     public void SetLanguage(string code)

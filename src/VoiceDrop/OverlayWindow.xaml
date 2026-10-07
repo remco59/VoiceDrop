@@ -19,8 +19,7 @@
 
         <!-- glass card -->
         <Border x:Name="Pill" Margin="28" Width="560" CornerRadius="28" Padding="26,20,22,18"
-                BorderThickness="1" TextElement.FontFamily="Segoe UI Variable Display, Segoe UI"
-                MouseEnter="Pill_MouseEnter" MouseLeave="Pill_MouseLeave" MouseLeftButtonDown="Pill_Click">
+                BorderThickness="1" TextElement.FontFamily="Segoe UI Variable Display, Segoe UI">
             <Border.Background>
                 <LinearGradientBrush StartPoint="0,0" EndPoint="1,0.35">
                     <GradientStop Color="#EE2A2D31" Offset="0" />

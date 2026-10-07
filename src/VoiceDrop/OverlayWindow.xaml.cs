@@ -1,6 +1,7 @@
 using System;
 using System.Runtime.InteropServices;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Shapes;
@@ -101,7 +102,10 @@ public partial class OverlayWindow : Window
     {
         _processing = false;
         Preview.Text = "";
-        Preview.Visibility = Visibility.Collapsed;
+        FullText.Text = "";
+        FullPopup.IsOpen = false;
+        PreviewBox.Visibility = Visibility.Collapsed;
+        SetClickThrough(AppSettings.Current.FullTextMode == "off");
         LangChip.Visibility = Visibility.Collapsed;
         StatusText.Text = "Listening";
         Array.Clear(_levels);
@@ -122,17 +126,50 @@ public partial class OverlayWindow : Window
     public void HideOverlay()
     {
         _anim.Stop();
+        FullPopup.IsOpen = false;
         Hide();
     }
 
     public void PushLevel(float level) => _target = level;
 
+    private const int PreviewWords = 10;
+
     public void SetPreview(string text)
     {
         if (string.IsNullOrWhiteSpace(text)) return;
-        const int max = 220;
-        Preview.Text = text.Length > max ? "…" + text[^max..] : text;
-        Preview.Visibility = Visibility.Visible;
+        FullText.Text = text;
+        FullScroll.ScrollToEnd();
+
+        var words = text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+        Preview.Text = words.Length > PreviewWords ? string.Join(' ', words[^PreviewWords..]) : text;
+        PreviewBox.Visibility = Visibility.Visible;
+
+        // keep the newest words visible: right-align inside the clipped box
+        Preview.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        Canvas.SetLeft(Preview, Math.Min(0, PreviewBox.Width - Preview.DesiredSize.Width));
+    }
+
+    private void SetClickThrough(bool on)
+    {
+        var h = new WindowInteropHelper(this).Handle;
+        if (h == IntPtr.Zero) return;
+        int ex = GetWindowLong(h, GWL_EXSTYLE);
+        SetWindowLong(h, GWL_EXSTYLE, on ? ex | WS_EX_TRANSPARENT : ex & ~WS_EX_TRANSPARENT);
+    }
+
+    private void Pill_MouseEnter(object sender, System.Windows.Input.MouseEventArgs e)
+    {
+        if (AppSettings.Current.FullTextMode == "hover" && FullText.Text.Length > 0) FullPopup.IsOpen = true;
+    }
+
+    private void Pill_MouseLeave(object sender, System.Windows.Input.MouseEventArgs e)
+    {
+        if (AppSettings.Current.FullTextMode == "hover") FullPopup.IsOpen = false;
+    }
+
+    private void Pill_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (AppSettings.Current.FullTextMode == "click" && FullText.Text.Length > 0) FullPopup.IsOpen = !FullPopup.IsOpen;
     }
 
     public void SetLanguage(string code)

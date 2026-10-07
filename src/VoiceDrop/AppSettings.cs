@@ -17,6 +17,7 @@ internal sealed class AppSettings
     public bool TrailingSpace { get; set; } = true;
     public bool PlaySounds { get; set; } = true;
     public string StartSound { get; set; } = "glass";
+    public string FullTextMode { get; set; } = "hover"; // off | hover | click
     public bool TapToToggle { get; set; } = true;
     public bool StartWithWindows { get; set; }
     public bool StartMinimized { get; set; }

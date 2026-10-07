@@ -20,6 +20,12 @@ public partial class SettingsPage : UserControl
         ThemeLight.IsChecked = !AppSettings.Current.DarkTheme;
 
         var s = AppSettings.Current;
+        foreach (var (id, name) in new[] { ("hover", "On hover"), ("click", "On click"), ("off", "Off") })
+        {
+            var chip = new RadioButton { Content = name, Style = (Style)FindResource("Chip"), GroupName = "ft", IsChecked = s.FullTextMode == id };
+            chip.Checked += (_, _) => { s.FullTextMode = id; s.Save(); };
+            FullTextChips.Children.Add(chip);
+        }
         foreach (var (id, name) in Sounds.All)
         {
             var chip = new RadioButton { Content = name, Style = (Style)FindResource("Chip"), GroupName = "snd", IsChecked = s.StartSound == id };

@@ -47,8 +47,36 @@ public partial class App : Application
     {
         _hook?.Dispose();
         _hook = new PushToTalkHook(AppSettings.Current.HotkeyVk);
-        _hook.Pressed += () => Dispatcher.BeginInvoke(() => _dictation!.BeginListening());
-        _hook.Released += () => Dispatcher.BeginInvoke(async () => await _dictation!.EndListeningAsync());
+        _hook.Pressed += () => Dispatcher.BeginInvoke(OnHotkeyDown);
+        _hook.Released += () => Dispatcher.BeginInvoke(OnHotkeyUp);
+    }
+
+    private DateTime _pressedAt;
+    private bool _latched;
+
+    private async void OnHotkeyDown()
+    {
+        if (_dictation!.State == DictationState.Listening && _latched)
+        {
+            _latched = false;
+            await _dictation.EndListeningAsync();
+            return;
+        }
+        _pressedAt = DateTime.UtcNow;
+        _dictation.BeginListening();
+    }
+
+    private async void OnHotkeyUp()
+    {
+        if (_dictation!.State != DictationState.Listening || _latched) return;
+        // quick tap: keep listening until the next press
+        if (AppSettings.Current.TapToToggle && DateTime.UtcNow - _pressedAt < TimeSpan.FromSeconds(1))
+        {
+            _latched = true;
+            _overlay?.SetHint("Tap again to stop");
+            return;
+        }
+        await _dictation.EndListeningAsync();
     }
 
     private void OnStateChanged()

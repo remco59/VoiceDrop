@@ -137,5 +137,26 @@ internal sealed class DictationController : IDisposable
 
 internal static class Sounds
 {
-    public static void Start() => Task.Run(() => { try { Console.Beep(880, 50); } catch { } });
+    public static readonly (string Id, string Name)[] All = [("glass", "Glass"), ("soft", "Soft"), ("ping", "Ping"), ("tap", "Tap")];
+
+    public static void Start() => Play(AppSettings.Current.StartSound);
+
+    public static void Play(string id)
+    {
+        Task.Run(() =>
+        {
+            try
+            {
+                var asm = typeof(Sounds).Assembly;
+                var name = Array.Find(asm.GetManifestResourceNames(), n => n.EndsWith($".{id}.wav", StringComparison.OrdinalIgnoreCase));
+                if (name == null) return;
+                var reader = new NAudio.Wave.WaveFileReader(asm.GetManifestResourceStream(name)!);
+                var output = new NAudio.Wave.WaveOutEvent();
+                output.Init(reader);
+                output.PlaybackStopped += (_, _) => { output.Dispose(); reader.Dispose(); };
+                output.Play();
+            }
+            catch { /* sound is optional */ }
+        });
+    }
 }

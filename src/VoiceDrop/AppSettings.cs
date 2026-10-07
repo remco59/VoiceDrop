@@ -16,6 +16,8 @@ internal sealed class AppSettings
     public bool SaveHistory { get; set; } = true;
     public bool TrailingSpace { get; set; } = true;
     public bool PlaySounds { get; set; } = true;
+    public string StartSound { get; set; } = "glass";
+    public bool TapToToggle { get; set; } = true;
     public bool StartWithWindows { get; set; }
     public bool StartMinimized { get; set; }
 

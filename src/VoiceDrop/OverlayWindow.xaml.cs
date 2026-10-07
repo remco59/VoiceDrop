@@ -111,6 +111,8 @@ public partial class OverlayWindow : Window
         Reposition();
     }
 
+    public void SetHint(string text) => StatusText.Text = text;
+
     public void ShowTranscribing()
     {
         _processing = true;

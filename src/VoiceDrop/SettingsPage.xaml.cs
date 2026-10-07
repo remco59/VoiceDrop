@@ -20,6 +20,13 @@ public partial class SettingsPage : UserControl
         ThemeLight.IsChecked = !AppSettings.Current.DarkTheme;
 
         var s = AppSettings.Current;
+        foreach (var (id, name) in Sounds.All)
+        {
+            var chip = new RadioButton { Content = name, Style = (Style)FindResource("Chip"), GroupName = "snd", IsChecked = s.StartSound == id };
+            chip.Checked += (_, _) => { s.StartSound = id; s.Save(); Sounds.Play(id); };
+            SoundChips.Children.Add(chip);
+        }
+        AddToggle("Tap to toggle", "Tap the key briefly (under 1 second) to keep recording; tap again to stop. Holding still works as push-to-talk.", () => s.TapToToggle, v => s.TapToToggle = v);
         AddToggle("Show overlay", "Floating pill with waveform and live text while you speak.", () => s.ShowOverlay, v => s.ShowOverlay = v);
         AddToggle("Sounds", "Short beep when recording starts.", () => s.PlaySounds, v => s.PlaySounds = v);
         AddToggle("Add trailing space", "Put a space after inserted text so you can keep talking.", () => s.TrailingSpace, v => s.TrailingSpace = v);

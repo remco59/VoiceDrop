@@ -132,7 +132,7 @@ public partial class OverlayWindow : Window
 
     public void PushLevel(float level) => _target = level;
 
-    private const int PreviewWords = 10;
+    private const int PreviewWords = 16;
 
     public void SetPreview(string text)
     {

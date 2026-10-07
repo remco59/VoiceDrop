@@ -9,7 +9,6 @@ namespace VoiceDrop;
 public partial class CleanupPage : UserControl
 {
     private readonly DictationController _dictation;
-    private bool _downloading;
 
     internal CleanupPage(DictationController dictation)
     {
@@ -36,6 +35,10 @@ public partial class CleanupPage : UserControl
 
         UpdateHint();
         RenderModels();
+
+        LlmDownloads.Changed += OnDownloadChanged;
+        Unloaded += (_, _) => LlmDownloads.Changed -= OnDownloadChanged;
+        if (LlmDownloads.IsRunning) OnDownloadChanged();
     }
 
     private void UpdateHint()
@@ -92,18 +95,22 @@ public partial class CleanupPage : UserControl
             grid.Children.Add(info);
 
             UIElement action;
+            bool thisDownloading = LlmDownloads.Current?.Id == m.Id;
+            long partial = LlmDownloads.PartialBytes(m);
             if (active && have)
                 action = new TextBlock { Text = "Active", Foreground = (Brush)FindResource("Accent"), FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center };
+            else if (thisDownloading)
+                action = new TextBlock { Text = "Downloading...", Foreground = (Brush)FindResource("TextSecondary"), VerticalAlignment = VerticalAlignment.Center };
             else
             {
                 var btn = new Button
                 {
-                    Content = have ? "Use" : "Download",
+                    Content = have ? "Use" : partial > 0 ? $"Resume ({partial / (1024 * 1024)} MB done)" : "Download",
                     Style = have ? (Style)FindResource("AccentButton") : (Style)FindResource(typeof(Button)),
                     VerticalAlignment = VerticalAlignment.Center,
-                    IsEnabled = !_downloading
+                    IsEnabled = !LlmDownloads.IsRunning
                 };
-                btn.Click += async (_, _) => await UseOrDownload(m, have);
+                btn.Click += (_, _) => UseOrDownload(m, have);
                 action = btn;
             }
             Grid.SetColumn(action, 1);
@@ -113,40 +120,46 @@ public partial class CleanupPage : UserControl
         }
     }
 
-    private async Task UseOrDownload(LlmInfo m, bool have)
+    private void UseOrDownload(LlmInfo m, bool have)
     {
-        var s = AppSettings.Current;
         if (!have)
         {
-            _downloading = true;
-            RenderModels();
-            Progress.Visibility = Visibility.Visible;
-            Progress.Value = 0;
-            ModelStatus.Text = $"Downloading {m.Title} from huggingface.co...";
-            try
-            {
-                await LocalLlm.DownloadAsync(m, p => Dispatcher.Invoke(() => { Progress.Value = p; ModelStatus.Text = $"Downloading {m.Title}... {p:P0}"; }));
-                ModelStatus.Text = "Downloaded.";
-            }
-            catch (Exception ex)
-            {
-                Log.Write("llm download failed: " + ex);
-                ModelStatus.Text = "Download failed: " + ex.Message;
-                _downloading = false;
-                Progress.Visibility = Visibility.Collapsed;
-                RenderModels();
-                return;
-            }
-            _downloading = false;
-            Progress.Visibility = Visibility.Collapsed;
+            _ = LlmDownloads.StartAsync(m); // the manager owns the download; this page only shows it
+            return;
         }
+        var s = AppSettings.Current;
         s.LlmId = m.Id;
         s.Save();
         _dictation.Llm.Unload();
         RenderModels();
         _dictation.WarmUpLlm();
-        if (have) ModelStatus.Text = "";
+        ModelStatus.Text = "";
     }
+
+    private string _renderKey = "";
+
+    /// <summary>Called from the download thread: updates the progress bar, and rebuilds the cards only when the state changes.</summary>
+    private void OnDownloadChanged()
+    {
+        Dispatcher.BeginInvoke(() =>
+        {
+            var cur = LlmDownloads.Current;
+            if (cur != null)
+            {
+                Progress.Visibility = Visibility.Visible;
+                Progress.Value = LlmDownloads.Progress;
+                ModelStatus.Text = $"Downloading {cur.Title} from huggingface.co... {LlmDownloads.Progress:P0}. It continues if you leave this page, and resumes if you close VoiceDrop.";
+            }
+            else
+            {
+                Progress.Visibility = Visibility.Collapsed;
+                ModelStatus.Text = LlmDownloads.Error != null ? "Download failed: " + LlmDownloads.Error + " Press Resume to continue." : "";
+            }
+            var key = (cur?.Id ?? "-") + AppSettings.Current.LlmId + (LlmDownloads.Error ?? "");
+            if (key != _renderKey) { _renderKey = key; RenderModels(); }
+        });
+    }
+
 
     private async void Run_Click(object sender, RoutedEventArgs e)
     {

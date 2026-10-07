@@ -31,6 +31,56 @@ internal static class LlmCatalog
     public static bool IsDownloaded(LlmInfo m) { try { return new FileInfo(PathOf(m)).Length > 100_000_000; } catch { return false; } }
 }
 
+/// <summary>
+/// Owns the one running model download, independent of any page, so leaving the Cleanup page does not lose track of it
+/// and a second download of the same file can not be started.
+/// </summary>
+internal static class LlmDownloads
+{
+    public static LlmInfo? Current { get; private set; }
+    public static double Progress { get; private set; }
+    public static string? Error { get; private set; }
+    public static event Action? Changed;
+    public static event Action<LlmInfo>? Completed;
+
+    public static bool IsRunning => Current != null;
+
+    public static long PartialBytes(LlmInfo m)
+    {
+        try { var f = new FileInfo(LlmCatalog.PathOf(m) + ".part"); return f.Exists ? f.Length : 0; } catch { return 0; }
+    }
+
+    /// <summary>Starts (or resumes) a download. When it finishes the model becomes the active one.</summary>
+    public static async Task StartAsync(LlmInfo model)
+    {
+        if (Current != null) return;
+        Current = model;
+        Progress = 0;
+        Error = null;
+        Changed?.Invoke();
+        try
+        {
+            await Task.Run(() => LocalLlm.DownloadAsync(model, p =>
+            {
+                Progress = p;
+                Changed?.Invoke();
+            }));
+            AppSettings.Current.LlmId = model.Id;
+            AppSettings.Current.Save();
+            Current = null;
+            Changed?.Invoke();
+            Completed?.Invoke(model);
+        }
+        catch (Exception ex)
+        {
+            Log.Write("llm download failed: " + ex);
+            Error = ex.Message;
+            Current = null;
+            Changed?.Invoke();
+        }
+    }
+}
+
 /// <summary>Small local instruct model (llama.cpp via LLamaSharp, Vulkan GPU with CPU fallback) that polishes dictated text.</summary>
 internal sealed class LocalLlm : IDisposable
 {
@@ -142,20 +192,37 @@ internal sealed class LocalLlm : IDisposable
         _nativeConfigured = true;
     }
 
+    /// <summary>Downloads the model. An interrupted download (app closed, network lost) is resumed from the .part file.</summary>
     public static async Task DownloadAsync(LlmInfo model, Action<double> progress, CancellationToken ct = default)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(LlmCatalog.PathOf(model))!);
         var path = LlmCatalog.PathOf(model);
         var tmp = path + ".part";
+        long existing = File.Exists(tmp) ? new FileInfo(tmp).Length : 0;
+
         using var http = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
-        using var resp = await http.GetAsync(model.Url, HttpCompletionOption.ResponseHeadersRead, ct);
+        using var req = new HttpRequestMessage(HttpMethod.Get, model.Url);
+        if (existing > 0) req.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(existing, null);
+        using var resp = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
+
+        if (resp.StatusCode == System.Net.HttpStatusCode.RequestedRangeNotSatisfiable)
+        {
+            // the .part file is already complete or does not match the server: start over
+            File.Delete(tmp);
+            await DownloadAsync(model, progress, ct);
+            return;
+        }
         resp.EnsureSuccessStatusCode();
-        long total = resp.Content.Headers.ContentLength ?? 0;
+
+        bool resumed = resp.StatusCode == System.Net.HttpStatusCode.PartialContent && existing > 0;
+        long total = (resp.Content.Headers.ContentLength ?? 0) + (resumed ? existing : 0);
+        long done = resumed ? existing : 0;
+        Log.Write($"llm download {model.Id}: {(resumed ? "resuming at " + existing : "starting")} of {total}");
+
         await using (var src = await resp.Content.ReadAsStreamAsync(ct))
-        await using (var dst = File.Create(tmp))
+        await using (var dst = new FileStream(tmp, resumed ? FileMode.Append : FileMode.Create, FileAccess.Write, FileShare.Read))
         {
             var buf = new byte[1 << 20];
-            long done = 0;
             int n;
             while ((n = await src.ReadAsync(buf, ct)) > 0)
             {

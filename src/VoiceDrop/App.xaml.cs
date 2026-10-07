@@ -26,6 +26,8 @@ public partial class App : Application
         _overlay = new OverlayWindow();
         _main = new MainWindow(_dictation);
 
+        // a finished model download becomes the active polish model
+        LlmDownloads.Completed += _ => Dispatcher.BeginInvoke(() => { _dictation.Llm.Unload(); _dictation.WarmUpLlm(); });
         _dictation.StateChanged += OnStateChanged;
         _dictation.Level += l => Dispatcher.BeginInvoke(() => _overlay.PushLevel(l));
         _dictation.Partial += text => { _overlay.SetPreview(text); _overlay.SetLanguage(_dictation.DetectedLanguage); };

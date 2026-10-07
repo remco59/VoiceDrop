@@ -22,7 +22,7 @@ internal static class TextCleaner
     private static readonly Regex Exclamation = new(@"\s*\b(?:exclamation mark|exclamation point|uitroepteken)\b[,.]?", Opt);
 
     // filler words, with their trailing comma/period and spacing
-    private const string Filler = @"(?:u+h+m*|u+m+|e+h+m+|e+u+h+m*|erm|h+m{2,}|m+h?m+)";
+    private const string Filler = @"(?:u+h+m*|u+m+|e+h+m*|e+u+h+m*|erm|h+m{2,}|m+h?m+)";
     private static readonly Regex FillerAtSentenceStart = new(
         @"(^|[.!?]\s+|\n)" + Filler + @"\b[,.…]*\s*(\p{L})?", Opt);
     private static readonly Regex FillerMidSentence = new(

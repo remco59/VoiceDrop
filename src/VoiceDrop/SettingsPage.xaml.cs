@@ -26,6 +26,19 @@ public partial class SettingsPage : UserControl
             chip.Checked += (_, _) => { s.FullTextMode = id; s.Save(); };
             FullTextChips.Children.Add(chip);
         }
+        // 0 = mute, -1 = do not touch other apps
+        foreach (var (level, name) in new[] { (-1, "Off"), (0, "Mute"), (10, "Very low"), (25, "Low"), (50, "Half") })
+        {
+            bool selected = level < 0 ? !s.DuckMedia : s.DuckMedia && s.DuckLevel == level;
+            var chip = new RadioButton { Content = name, Style = (Style)FindResource("Chip"), GroupName = "duck", IsChecked = selected };
+            chip.Checked += (_, _) =>
+            {
+                s.DuckMedia = level >= 0;
+                if (level >= 0) s.DuckLevel = level;
+                s.Save();
+            };
+            DuckChips.Children.Add(chip);
+        }
         foreach (var (id, name) in Sounds.All)
         {
             var chip = new RadioButton { Content = name, Style = (Style)FindResource("Chip"), GroupName = "snd", IsChecked = s.StartSound == id };

@@ -20,6 +20,7 @@ internal sealed class DictationController : IDisposable
     public string DetectedLanguage { get; private set; } = "";
     public Transcriber Transcriber => _transcriber;
     public LocalLlm Llm { get; } = new();
+    public MediaDucker Ducker { get; } = new();
 
     public event Action? StateChanged;
     public event Action<float>? Level;
@@ -95,6 +96,7 @@ internal sealed class DictationController : IDisposable
         if (State != DictationState.Idle) return;
         DetectedLanguage = "";
         _recorder.Start();
+        if (AppSettings.Current.DuckMedia) Ducker.Duck(AppSettings.Current.DuckLevel);
         Set(DictationState.Listening, "Listening");
         if (AppSettings.Current.PlaySounds) Sounds.Start();
 
@@ -135,6 +137,7 @@ internal sealed class DictationController : IDisposable
         try { if (_liveTask != null) await _liveTask; } catch { }
         _liveCts?.Dispose(); _liveCts = null; _liveTask = null;
         _recorder.Stop()?.Dispose();
+        Ducker.Restore();
         Log.Write("recording cancelled");
         Set(DictationState.Idle, "Ready");
     }
@@ -149,6 +152,7 @@ internal sealed class DictationController : IDisposable
 
         double secs = _recorder.Seconds;
         var wav = _recorder.Stop();
+        Ducker.Restore(); // capture is over: bring the other apps back up while we transcribe
         if (wav == null) { Set(DictationState.Idle, "Ready"); return; }
 
         Set(DictationState.Transcribing, "Transcribing");
@@ -180,6 +184,7 @@ internal sealed class DictationController : IDisposable
         _recorder.Dispose();
         _transcriber.Dispose();
         Llm.Dispose();
+        Ducker.RestoreNow();
     }
 }
 

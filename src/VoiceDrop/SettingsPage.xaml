@@ -45,6 +45,15 @@
 
             <Border Style="{StaticResource Card}">
                 <StackPanel>
+                    <TextBlock Style="{StaticResource SectionTitle}" Text="Background volume while dictating" />
+                    <TextBlock Style="{StaticResource Secondary}" Margin="0,2,0,12"
+                               Text="Other apps (a video, music) are turned down while you dictate and fade back when you are done, so the microphone does not pick them up. VoiceDrop's own sounds are not affected." />
+                    <WrapPanel x:Name="DuckChips" />
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource Card}">
+                <StackPanel>
                     <TextBlock Style="{StaticResource SectionTitle}" Text="Start sound" />
                     <TextBlock Style="{StaticResource Secondary}" Margin="0,2,0,12" Text="Played when recording starts. Click one to hear it." />
                     <WrapPanel x:Name="SoundChips" />

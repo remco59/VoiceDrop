@@ -22,6 +22,8 @@ internal sealed class AppSettings
     public bool CleanFillers { get; set; } = true;
     public bool VoiceCommands { get; set; } = true;
     public string LlmId { get; set; } = "qwen-1.5b";
+    public bool DuckMedia { get; set; } = true;          // lower other apps' volume while dictating
+    public int DuckLevel { get; set; } = 10;             // percent of their own volume that stays audible
     public bool TapToToggle { get; set; } = true;
     public bool StartWithWindows { get; set; }
     public bool StartMinimized { get; set; }
